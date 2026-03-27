@@ -61,6 +61,8 @@ html, body, [class*="css"] {{
 }}
 
 .logo-wrap img {{
+    max-height: 100%;
+    max-width: 100%;
     width: auto;
     height: auto;
     object-fit: contain;
