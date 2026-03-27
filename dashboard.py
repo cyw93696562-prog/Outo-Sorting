@@ -51,7 +51,7 @@ html, body, [class*="css"] {{
 
 .fixed-header img {{
     height: 64px;
-    max-height: 250px;
+    max-height: 350px;
     width: auto;
     object-fit: contain;
 }}
