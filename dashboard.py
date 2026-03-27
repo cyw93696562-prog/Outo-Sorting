@@ -426,7 +426,7 @@ html, body, [class*="css"] {
 }
 
 .block-container {
-    padding-top: 105px;
+    padding-top: 120px;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
@@ -438,12 +438,12 @@ html, body, [class*="css"] {
     top: 0;
     left: 0;
     width: 100%;
-    height: 96px;
+    height: 110px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 28px;
+    padding: 0 28px;
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -455,13 +455,12 @@ html, body, [class*="css"] {
     align-items: center;
     justify-content: flex-start;
     height: 100%;
-    width: 300px;
+    width: 360px;
     flex-shrink: 0;
-    overflow: hidden;
 }
 
 .logo-wrap img {
-    max-height: 58px;
+    max-height: 72px;
     max-width: 100%;
     width: auto;
     height: auto;
@@ -475,7 +474,7 @@ html, body, [class*="css"] {
     align-items: center;
     justify-content: flex-end;
     height: 100%;
-    font-size: 34px;
+    font-size: 44px;
     font-weight: 900;
     color: #1d2f5f;
     line-height: 1;
