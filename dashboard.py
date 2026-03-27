@@ -3,97 +3,157 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit.components.v1 import html
 import base64
-import os
 
 st.set_page_config(page_title="DLL Sorting System", layout="wide")
 
 # ===============================
-# 화면 스타일
+# 로고 base64 변환
 # ===============================
-st.markdown("""
+def get_base64_image(image_path):
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+logo_base64 = ""
+try:
+    logo_base64 = get_base64_image("dllogis_logo.gif")
+except Exception:
+    logo_base64 = ""
+
+# ===============================
+# 화면 스타일 + 고정 헤더
+# ===============================
+st.markdown(f"""
 <style>
-.block-container {
-    padding-top: 0.6rem;
+html, body, [class*="css"] {{
+    font-family: Arial, Helvetica, sans-serif;
+}}
+
+.block-container {{
+    padding-top: 120px;
     padding-bottom: 1.2rem;
     max-width: 1500px;
-}
-.main-title {
-    font-size: 54px;
-    font-weight: 800;
+}}
+
+.fixed-header {{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 92px;
+    background-color: #ffffff;
+    display: flex;
+    align-items: center;
+    padding: 10px 28px;
+    border-bottom: 2px solid #e6ebf2;
+    z-index: 99999;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}}
+
+.fixed-header img {{
+    height: 64px;
+    width: auto;
+    object-fit: contain;
+}}
+
+.header-title {{
+    font-size: 38px;
+    font-weight: 900;
     color: #1d2f5f;
-    margin: 0;
-    line-height: 1.1;
-}
-.sub-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: #4d5b7c;
+    margin-left: 18px;
+    line-height: 1;
+}}
+
+.header-sub {{
+    font-size: 16px;
+    font-weight: 700;
+    color: #5c6c90;
+    margin-left: 18px;
     margin-top: 6px;
-}
-.section-title {
+}}
+
+.header-text-wrap {{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}}
+
+.section-title {{
     font-size: 34px;
     font-weight: 800;
     color: #1d2f5f;
     margin-top: 18px;
     margin-bottom: 8px;
-}
-.stTextInput label {
+}}
+
+.stTextInput label {{
     font-size: 24px !important;
     font-weight: 800 !important;
-}
-.stTextInput input {
-    font-size: 30px !important;
+}}
+
+.stTextInput input {{
+    font-size: 32px !important;
     height: 72px !important;
     font-weight: 700 !important;
-}
-.small-caption {
+}}
+
+.small-caption {{
     font-size: 18px !important;
     color: #5d6b89;
-}
-.big-banner {
+}}
+
+.big-banner {{
     font-size: 42px;
     font-weight: 900;
     padding: 24px 28px;
     border-radius: 16px;
     margin-bottom: 16px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.10);
-}
-.banner-success {
+}}
+
+.banner-success {{
     background-color: #e8f5e9;
     color: #1b5e20;
-}
-.banner-error {
+}}
+
+.banner-error {{
     background-color: #ffebee;
     color: #b71c1c;
-}
-.banner-warning {
+}}
+
+.banner-warning {{
     background-color: #fff8e1;
     color: #8d6e00;
-}
-.big-message {
+}}
+
+.big-message {{
     font-size: 28px;
     font-weight: 800;
     padding: 14px 18px;
     border-radius: 12px;
     margin-bottom: 10px;
-}
-.msg-success {
+}}
+
+.msg-success {{
     background-color: #e8f5e9;
     color: #1b5e20;
-}
-.msg-warning {
+}}
+
+.msg-warning {{
     background-color: #fff8e1;
     color: #8d6e00;
-}
-.msg-error {
+}}
+
+.msg-error {{
     background-color: #ffebee;
     color: #b71c1c;
-}
-.msg-info {
+}}
+
+.msg-info {{
     background-color: #f3f6fb;
     color: #1f3b5c;
-}
-.store-done {
+}}
+
+.store-done {{
     font-size: 28px;
     font-weight: 800;
     margin-bottom: 12px;
@@ -101,48 +161,43 @@ st.markdown("""
     border-radius: 12px;
     background-color: #eef7ee;
     color: #1b5e20;
-}
-.summary-card {
+}}
+
+.summary-card {{
     background: #f8fafc;
     border-radius: 14px;
     padding: 18px 18px;
     margin-bottom: 14px;
     border: 1px solid #e6ebf2;
-}
-.summary-label {
+}}
+
+.summary-label {{
     font-size: 22px;
     font-weight: 700;
     color: #4d5b7c;
     margin-bottom: 8px;
-}
-.summary-value {
+}}
+
+.summary-value {{
     font-size: 42px;
     font-weight: 900;
     color: #1d2f5f;
-}
-hr {
+}}
+
+hr {{
     margin-top: 0.6rem;
     margin-bottom: 1rem;
-}
+}}
 </style>
+
+<div class="fixed-header">
+    {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
+    <div class="header-text-wrap">
+        <div class="header-title">DLL Sorting System</div>
+        <div class="header-sub">DL LOGIS · WCS Auto Sorting Dashboard</div>
+    </div>
+</div>
 """, unsafe_allow_html=True)
-
-# ===============================
-# 상단 헤더
-# ===============================
-col_logo, col_title = st.columns([1, 3])
-
-with col_logo:
-    try:
-        st.image("dllogis_logo.gif", width=150)
-    except Exception:
-        st.warning("로고 파일을 찾지 못했습니다. 저장소에 dllogis_logo.gif를 올려주세요.")
-
-with col_title:
-    st.markdown('<p class="main-title">DLL Sorting System</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">DL LOGIS · WCS Auto Sorting Dashboard</p>', unsafe_allow_html=True)
-
-st.markdown("<hr>", unsafe_allow_html=True)
 
 # ===============================
 # 엑셀 로드
@@ -230,7 +285,7 @@ for store, _ in sorted_stores:
     chute_no += 1
 
 # ===============================
-# 효과음 함수
+# 효과음
 # ===============================
 def play_beep():
     st.markdown(
@@ -277,12 +332,10 @@ def process_barcode():
 
             chute = store_map[store]
             st.session_state.store_processed_qty[store] += qty
-
             messages.append(("info", f"👉 {product} → {store} {qty}개 (슈트 {chute})"))
 
             total = store_total_qty[store]
             done = st.session_state.store_processed_qty[store]
-
             if done >= total:
                 st.session_state.completed_stores.add(store)
 
@@ -369,7 +422,7 @@ if st.session_state.play_success_sound:
     st.session_state.play_success_sound = False
 
 # ===============================
-# 가장 최근 처리 1건 큰 배너
+# 최근 처리 상태
 # ===============================
 st.markdown('<p class="section-title">🚨 최근 처리 상태</p>', unsafe_allow_html=True)
 main_level, main_msg = st.session_state.last_main_message
@@ -384,7 +437,7 @@ else:
     st.info(main_msg)
 
 # ===============================
-# 최근 처리 상세
+# 최근 처리 내역
 # ===============================
 st.markdown('<p class="section-title">📋 최근 처리 내역</p>', unsafe_allow_html=True)
 
