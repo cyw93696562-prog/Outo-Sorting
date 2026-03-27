@@ -428,36 +428,29 @@ html, body, [class*="css"] {{
     padding-left: 20px;
     padding-right: 20px;
 }}
-.fixed-header {{
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 170px;
-    background-color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 28px;
-    border-bottom: 2px solid #e6ebf2;
-    z-index: 99999;
+ z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}}
-.logo-wrap {{
+}
+
+.logo-wrap {
     display: flex;
     align-items: center;
-    height: 80px;
-    width: 320px;
+    justify-content: flex-start;
+    height: 100px;
+    width: auto;
+    min-width: 420px;
     flex-shrink: 0;
-}}
-.logo-wrap img {{
-    max-height: 100%;
-    max-width: 100%;
+    overflow: visible;
+}
+
+.logo-wrap img {
+    max-height: 95px;
     width: auto;
     height: auto;
     object-fit: contain;
     object-position: left center;
     display: block;
+}
 }}
 .header-title-only {{
     font-size: 42px;
