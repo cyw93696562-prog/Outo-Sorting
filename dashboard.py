@@ -166,11 +166,11 @@ html, body, [class*="css"] {{
 }}
 
 .plan-card {{
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 10px;
-    padding: 12px 16px;
-    border-radius: 12px;
+    font-size: 26px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    padding: 16px 18px;
+    border-radius: 14px;
     background-color: #f5f7fb;
     color: #1f3b5c;
     border: 1px solid #e6ebf2;
@@ -270,6 +270,12 @@ if "last_messages" not in st.session_state:
 if "last_main_message" not in st.session_state:
     st.session_state.last_main_message = ("info", "대기 중")
 
+if "last_scan_plan" not in st.session_state:
+    st.session_state.last_scan_plan = []
+
+if "last_scan_product" not in st.session_state:
+    st.session_state.last_scan_product = ""
+
 if "play_success_sound" not in st.session_state:
     st.session_state.play_success_sound = False
 
@@ -311,20 +317,24 @@ def play_beep():
 def process_barcode():
     barcode = st.session_state.barcode_input.strip()
     messages = []
+    current_plan = []
 
     if not barcode:
         return
 
     if barcode in st.session_state.processed:
         st.session_state.last_main_message = ("warning", "⚠️ 이미 처리된 바코드입니다.")
+        st.session_state.last_scan_plan = []
         messages.append(("warning", "⚠️ 이미 처리된 바코드입니다."))
     elif barcode not in orders:
         st.session_state.last_main_message = ("error", "❌ 주문 없음")
+        st.session_state.last_scan_plan = []
         messages.append(("error", "❌ 주문 없음"))
         st.session_state.error_count += 1
     else:
         items = orders[barcode]
         first_product = items[0]["product"] if items else barcode
+        st.session_state.last_scan_product = first_product
 
         for item in items:
             store = item["store"]
@@ -341,11 +351,18 @@ def process_barcode():
             st.session_state.store_processed_qty[store] += qty
             messages.append(("info", f"👉 {product} → {store} {qty}개 (슈트 {chute})"))
 
+            current_plan.append({
+                "store": store,
+                "qty": qty,
+                "chute": chute
+            })
+
             total = store_total_qty[store]
             done = st.session_state.store_processed_qty[store]
             if done >= total:
                 st.session_state.completed_stores.add(store)
 
+        st.session_state.last_scan_plan = current_plan
         st.session_state.processed.add(barcode)
         st.session_state.last_main_message = ("success", f"✅ {first_product} 처리 완료")
         st.session_state.play_success_sound = True
@@ -470,28 +487,47 @@ with left_col:
                 st.markdown(f'<div class="big-message msg-info">{msg}</div>', unsafe_allow_html=True)
 
 with right_col:
-    st.markdown('<p class="section-title">📦 매장별 배분 예정 내역</p>', unsafe_allow_html=True)
+    if view_mode == "작업자 모드":
+        st.markdown('<p class="section-title">📦 방금 스캔한 제품 배분 내역</p>', unsafe_allow_html=True)
 
-    for store, total_qty in sorted_stores:
-        chute = store_map.get(store, "-")
-        done = st.session_state.store_processed_qty.get(store, 0)
-        remain = max(total_qty - done, 0)
-        st.markdown(
-            f'<div class="plan-card">{store} (슈트 {chute}) | 총 {total_qty}개 | 잔여 {remain}개</div>',
-            unsafe_allow_html=True
-        )
-
-    st.markdown('<p class="section-title">✅ 완료된 매장 목록 (100%)</p>', unsafe_allow_html=True)
-
-    if not st.session_state.completed_stores:
-        st.write("아직 완료된 매장 없음")
-    else:
-        for store in sorted(st.session_state.completed_stores):
-            chute = store_map.get(store, "-")
+        if not st.session_state.last_scan_plan:
+            st.info("아직 스캔된 제품이 없습니다.")
+        else:
+            product_name = st.session_state.last_scan_product
             st.markdown(
-                f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>',
+                f'<div class="big-banner banner-success">📌 {product_name}</div>',
                 unsafe_allow_html=True
             )
+
+            for plan in st.session_state.last_scan_plan:
+                st.markdown(
+                    f'<div class="plan-card">{plan["store"]} | {plan["qty"]}개 | 슈트 {plan["chute"]}</div>',
+                    unsafe_allow_html=True
+                )
+
+    else:
+        st.markdown('<p class="section-title">📦 매장별 배분 예정 내역</p>', unsafe_allow_html=True)
+
+        for store, total_qty in sorted_stores:
+            chute = store_map.get(store, "-")
+            done = st.session_state.store_processed_qty.get(store, 0)
+            remain = max(total_qty - done, 0)
+            st.markdown(
+                f'<div class="plan-card">{store} (슈트 {chute}) | 총 {total_qty}개 | 잔여 {remain}개</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown('<p class="section-title">✅ 완료된 매장 목록 (100%)</p>', unsafe_allow_html=True)
+
+        if not st.session_state.completed_stores:
+            st.write("아직 완료된 매장 없음")
+        else:
+            for store in sorted(st.session_state.completed_stores):
+                chute = store_map.get(store, "-")
+                st.markdown(
+                    f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>',
+                    unsafe_allow_html=True
+                )
 
 # ===============================
 # 관리자 모드 전용
