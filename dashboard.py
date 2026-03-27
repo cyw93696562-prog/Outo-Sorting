@@ -41,7 +41,7 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 150px;
+    height: 130px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
@@ -56,7 +56,7 @@ html, body, [class*="css"] {{
     display: flex;
     align-items: center;
     height: 80px;
-    width: 350px;
+    width: 320px;
     flex-shrink: 0;
 }}
 
