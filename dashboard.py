@@ -493,6 +493,10 @@ html, body, [class*="css"] {
     margin-top: 0px;
     margin-bottom: 8px;
 }
+</style>
+"""
+
+st.markdown(page_css, unsafe_allow_html=True)
 
 .select-box-area, .summary-card {
     background: #f8fafc;
