@@ -191,13 +191,66 @@ hr {{
 }}
 </style>
 
+st.markdown(f"""
+<style>
+html, body, [class*="css"] {{
+    font-family: Arial, Helvetica, sans-serif;
+}}
+
+.block-container {{
+    padding-top: 130px;
+    padding-bottom: 1.2rem;
+    max-width: 1500px;
+}}
+
+.fixed-header {{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 110px;
+    background-color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 28px;
+    border-bottom: 2px solid #e6ebf2;
+    z-index: 99999;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}}
+
+.logo-wrap {{
+    display: flex;
+    align-items: center;
+    height: 90px;
+    width: 360px;
+    flex-shrink: 0;
+}}
+
+.logo-wrap img {{
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: left center;
+    display: block;
+}}
+
+.header-title-only {{
+    font-size: 40px;
+    font-weight: 900;
+    color: #1d2f5f;
+    line-height: 1;
+    text-align: right;
+}}
+</style>
+
 <div class="fixed-header">
-    {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
-    <div class="header-text-wrap">
-        <div class="header-title">DLL Sorting System</div>
-        <div class="header-sub">DL LOGIS · WCS Auto Sorting Dashboard</div>
+    <div class="logo-wrap">
+        {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
     </div>
+    <div class="header-title-only">DLL Sorting System</div>
 </div>
+""", unsafe_allow_html=True)
 """, unsafe_allow_html=True)
 
 # ===============================
