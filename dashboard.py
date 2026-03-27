@@ -416,7 +416,7 @@ except Exception:
     logo_base64 = ""
 
 st.markdown(
-    f"""
+    """
 <style>
 html, body, [class*="css"] {{
     font-family: Arial, Helvetica, sans-serif;
