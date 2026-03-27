@@ -426,7 +426,7 @@ html, body, [class*="css"] {
 }
 
 .block-container {
-    padding-top: 115px;
+    padding-top: 105px;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
@@ -438,30 +438,31 @@ html, body, [class*="css"] {
     top: 0;
     left: 0;
     width: 100%;
-    height: 130px;
+    height: 96px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 24px;
+    padding: 10px 28px;
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-sizing: border-box;
 }
 
 .logo-wrap {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    height: 100px;
-    min-width: 420px;
-    width: auto;
+    height: 100%;
+    width: 300px;
     flex-shrink: 0;
-    overflow: visible;
+    overflow: hidden;
 }
 
 .logo-wrap img {
-    max-height: 95px;
+    max-height: 58px;
+    max-width: 100%;
     width: auto;
     height: auto;
     object-fit: contain;
@@ -470,13 +471,20 @@ html, body, [class*="css"] {
 }
 
 .header-title-only {
-    font-size: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    font-size: 34px;
     font-weight: 900;
     color: #1d2f5f;
     line-height: 1;
     text-align: right;
-    margin-right: 10px;
+    margin: 0;
+    white-space: nowrap;
 }
+</style>
+"""
 
 .section-title {
     font-size: 26px;
@@ -577,11 +585,12 @@ st.markdown(page_css, unsafe_allow_html=True)
 
 header_logo_html = f"<img src='data:image/gif;base64,{logo_base64}'>" if logo_base64 else ""
 header_html = f"""
-<div class=\"fixed-header\">
-    <div class=\"logo-wrap\">{header_logo_html}</div>
-    <div class=\"header-title-only\">Sorting System</div>
+<div class="fixed-header">
+    <div class="logo-wrap">{header_logo_html}</div>
+    <div class="header-title-only">Sorting System</div>
 </div>
 """
+st.markdown(page_css, unsafe_allow_html=True)
 st.markdown(header_html, unsafe_allow_html=True)
 
 
