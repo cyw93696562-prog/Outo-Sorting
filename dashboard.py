@@ -4,8 +4,10 @@ import plotly.graph_objects as go
 from streamlit.components.v1 import html
 import base64
 import json
+import time
 from datetime import datetime
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="DLL Sorting System", layout="wide")
@@ -18,6 +20,7 @@ SCOPES = [
 # ===============================
 # Google Sheets 연결
 # ===============================
+@st.cache_resource
 def get_gspread_client():
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
@@ -25,23 +28,54 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
+@st.cache_resource
 def get_worksheets():
     gc = get_gspread_client()
-    sh = gc.open(st.secrets["google_sheet"]["spreadsheet_name"])
+    sh = gc.open_by_key(st.secrets["google_sheet"]["spreadsheet_key"])
     ws_state = sh.worksheet(st.secrets["google_sheet"]["state_worksheet"])
     ws_logs = sh.worksheet(st.secrets["google_sheet"]["logs_worksheet"])
     return ws_state, ws_logs
 
-def ensure_sheet_headers():
+def retry_gsheet(func, *args, max_retries=4, **kwargs):
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except APIError as e:
+            last_error = e
+            if "429" in str(e) or "Quota" in str(e):
+                time.sleep(2 ** attempt)
+            else:
+                raise
+    raise last_error
+
+def ensure_sheet_headers_once():
     ws_state, ws_logs = get_worksheets()
 
-    state_values = ws_state.get_all_values()
-    if not state_values:
-        ws_state.append_row(["key", "value_json", "saved_at"])
+    # state 시트: 1행 헤더, 2행 current_state 고정
+    state_row1 = retry_gsheet(ws_state.get, "A1:C2")
+    if not state_row1 or len(state_row1) == 0:
+        retry_gsheet(ws_state.update, "A1:C2", [
+            ["key", "value_json", "saved_at"],
+            ["current_state", "{}", ""]
+        ])
+    else:
+        # 헤더 없으면 보정
+        row1 = state_row1[0] if len(state_row1) >= 1 else []
+        if row1[:3] != ["key", "value_json", "saved_at"]:
+            retry_gsheet(ws_state.update, "A1:C1", [["key", "value_json", "saved_at"]])
+        # 2행 current_state 없으면 보정
+        if len(state_row1) < 2 or not state_row1[1] or state_row1[1][0] != "current_state":
+            retry_gsheet(ws_state.update, "A2:C2", [["current_state", "{}", ""]])
 
-    logs_values = ws_logs.get_all_values()
-    if not logs_values:
-        ws_logs.append_row(["saved_at", "barcode", "product", "store", "qty", "chute", "status"])
+    # logs 시트 헤더
+    logs_row1 = retry_gsheet(ws_logs.get, "A1:G1")
+    if not logs_row1 or len(logs_row1) == 0 or logs_row1[0][:7] != [
+        "saved_at", "barcode", "product", "store", "qty", "chute", "status"
+    ]:
+        retry_gsheet(ws_logs.update, "A1:G1", [[
+            "saved_at", "barcode", "product", "store", "qty", "chute", "status"
+        ]])
 
 def save_state_to_gsheet():
     ws_state, _ = get_worksheets()
@@ -50,7 +84,7 @@ def save_state_to_gsheet():
         "store_processed_qty": st.session_state.store_processed_qty,
         "completed_stores": list(st.session_state.completed_stores),
         "processed": list(st.session_state.processed),
-        "processed_products": list(st.session_state.processed_products),
+        "processed_pairs": list(st.session_state.processed_pairs),
         "error_count": st.session_state.error_count,
         "last_messages": st.session_state.last_messages,
         "last_main_message": list(st.session_state.last_main_message),
@@ -61,36 +95,37 @@ def save_state_to_gsheet():
     saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = json.dumps(state_data, ensure_ascii=False)
 
-    values = ws_state.get_all_values()
-    row_index = None
-
-    for i, row in enumerate(values, start=1):
-        if len(row) > 0 and row[0] == "current_state":
-            row_index = i
-            break
-
-    if row_index:
-        ws_state.update(f"A{row_index}:C{row_index}", [["current_state", payload, saved_at]])
-    else:
-        ws_state.append_row(["current_state", payload, saved_at])
+    retry_gsheet(ws_state.update, "A2:C2", [["current_state", payload, saved_at]])
 
 def load_state_from_gsheet():
     ws_state, _ = get_worksheets()
-    values = ws_state.get_all_values()
+    row = retry_gsheet(ws_state.get, "A2:C2")
 
-    for row in values[1:]:
-        if len(row) >= 2 and row[0] == "current_state":
-            try:
-                return json.loads(row[1])
-            except Exception:
-                return None
-    return None
+    if not row or len(row) == 0:
+        return None
+
+    values = row[0]
+    if len(values) < 2:
+        return None
+
+    if values[0] != "current_state":
+        return None
+
+    raw_json = values[1].strip() if len(values) >= 2 else ""
+    if not raw_json:
+        return None
+
+    try:
+        data = json.loads(raw_json)
+        return data
+    except Exception:
+        return None
 
 def append_log_rows(rows):
     if not rows:
         return
     _, ws_logs = get_worksheets()
-    ws_logs.append_rows(rows)
+    retry_gsheet(ws_logs.append_rows, rows)
 
 # ===============================
 # 상태 초기화
@@ -99,7 +134,7 @@ def reset_state(store_total_qty):
     st.session_state.store_processed_qty = {store: 0 for store in store_total_qty}
     st.session_state.completed_stores = set()
     st.session_state.processed = set()
-    st.session_state.processed_products = set()
+    st.session_state.processed_pairs = set()
     st.session_state.error_count = 0
     st.session_state.last_messages = []
     st.session_state.last_main_message = ("info", "대기 중")
@@ -143,7 +178,7 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 200px;
+    height: 130px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
@@ -399,46 +434,50 @@ for store, _ in sorted_stores:
     chute_no += 1
 
 # ===============================
-# 시트 초기화
+# 시트 초기화 (한 번만)
 # ===============================
-try:
-    ensure_sheet_headers()
-except Exception as e:
-    st.error(f"Google Sheets 연결 오류: {e}")
-    st.stop()
+if "sheet_initialized" not in st.session_state:
+    try:
+        ensure_sheet_headers_once()
+        st.session_state.sheet_initialized = True
+    except Exception as e:
+        st.error(f"Google Sheets 연결 오류: {e}")
+        st.stop()
 
 # ===============================
-# 세션 상태 로드
+# 세션 상태 로드 (처음 1회만)
 # ===============================
-loaded_state = load_state_from_gsheet()
+if "state_loaded" not in st.session_state:
+    try:
+        loaded_state = load_state_from_gsheet()
+    except Exception as e:
+        st.error(f"저장 데이터 읽기 오류: {e}")
+        st.stop()
 
-if "store_processed_qty" not in st.session_state:
-    st.session_state.store_processed_qty = loaded_state.get("store_processed_qty", {store: 0 for store in store_total_qty}) if loaded_state else {store: 0 for store in store_total_qty}
+    if loaded_state:
+        st.session_state.store_processed_qty = loaded_state.get("store_processed_qty", {store: 0 for store in store_total_qty})
+        st.session_state.completed_stores = set(loaded_state.get("completed_stores", []))
+        st.session_state.processed = set(loaded_state.get("processed", []))
+        st.session_state.processed_pairs = set(loaded_state.get("processed_pairs", []))
+        st.session_state.error_count = loaded_state.get("error_count", 0)
+        st.session_state.last_messages = loaded_state.get("last_messages", [])
+        st.session_state.last_main_message = tuple(loaded_state.get("last_main_message", ["info", "대기 중"]))
+        st.session_state.last_scan_plan = loaded_state.get("last_scan_plan", [])
+        st.session_state.last_scan_product = loaded_state.get("last_scan_product", "")
+    else:
+        st.session_state.store_processed_qty = {store: 0 for store in store_total_qty}
+        st.session_state.completed_stores = set()
+        st.session_state.processed = set()
+        st.session_state.processed_pairs = set()
+        st.session_state.error_count = 0
+        st.session_state.last_messages = []
+        st.session_state.last_main_message = ("info", "대기 중")
+        st.session_state.last_scan_plan = []
+        st.session_state.last_scan_product = ""
 
-if "completed_stores" not in st.session_state:
-    st.session_state.completed_stores = set(loaded_state.get("completed_stores", [])) if loaded_state else set()
-
-if "processed" not in st.session_state:
-    st.session_state.processed = set(loaded_state.get("processed", [])) if loaded_state else set()
-
-if "processed_products" not in st.session_state:
-    st.session_state.processed_products = set(loaded_state.get("processed_products", [])) if loaded_state else set()
-
-if "error_count" not in st.session_state:
-    st.session_state.error_count = loaded_state.get("error_count", 0) if loaded_state else 0
-
-if "last_messages" not in st.session_state:
-    st.session_state.last_messages = loaded_state.get("last_messages", []) if loaded_state else []
-
-if "last_main_message" not in st.session_state:
-    last_main = loaded_state.get("last_main_message", ["info", "대기 중"]) if loaded_state else ["info", "대기 중"]
-    st.session_state.last_main_message = tuple(last_main)
-
-if "last_scan_plan" not in st.session_state:
-    st.session_state.last_scan_plan = loaded_state.get("last_scan_plan", []) if loaded_state else []
-
-if "last_scan_product" not in st.session_state:
-    st.session_state.last_scan_product = loaded_state.get("last_scan_product", "") if loaded_state else ""
+    st.session_state.play_success_sound = False
+    st.session_state.barcode_input = ""
+    st.session_state.state_loaded = True
 
 if "play_success_sound" not in st.session_state:
     st.session_state.play_success_sound = False
@@ -487,7 +526,6 @@ def process_barcode():
         items = orders[barcode]
         first_product = items[0]["product"] if items else barcode
         st.session_state.last_scan_product = first_product
-        st.session_state.processed_products.add(first_product)
 
         for item in items:
             store = item["store"]
@@ -504,6 +542,9 @@ def process_barcode():
             chute = store_map[store]
             st.session_state.store_processed_qty[store] += qty
             messages.append(("info", f"👉 {product} → {store} {qty}개 (슈트 {chute})"))
+
+            pair_key = f"{barcode}||{store}"
+            st.session_state.processed_pairs.add(pair_key)
 
             current_plan.append({
                 "store": store,
@@ -530,8 +571,11 @@ def process_barcode():
     st.session_state.last_messages = existing[-8:]
     st.session_state.barcode_input = ""
 
-    save_state_to_gsheet()
-    append_log_rows(log_rows)
+    try:
+        save_state_to_gsheet()
+        append_log_rows(log_rows)
+    except Exception as e:
+        st.session_state.last_main_message = ("error", f"저장 실패: {e}")
 
 # ===============================
 # 원형 그래프
@@ -583,28 +627,34 @@ with top1:
 with top2:
     st.markdown('<p class="section-title">🔄 복구</p>', unsafe_allow_html=True)
     if st.button("저장 데이터 복구", use_container_width=True):
-        recovered = load_state_from_gsheet()
-        if recovered:
-            st.session_state.store_processed_qty = recovered.get("store_processed_qty", {store: 0 for store in store_total_qty})
-            st.session_state.completed_stores = set(recovered.get("completed_stores", []))
-            st.session_state.processed = set(recovered.get("processed", []))
-            st.session_state.processed_products = set(recovered.get("processed_products", []))
-            st.session_state.error_count = recovered.get("error_count", 0)
-            st.session_state.last_messages = recovered.get("last_messages", [])
-            st.session_state.last_main_message = tuple(recovered.get("last_main_message", ["info", "대기 중"]))
-            st.session_state.last_scan_plan = recovered.get("last_scan_plan", [])
-            st.session_state.last_scan_product = recovered.get("last_scan_product", "")
-            st.success("저장 데이터 복구 완료")
-            st.rerun()
-        else:
-            st.warning("복구할 저장 데이터가 없습니다.")
+        try:
+            recovered = load_state_from_gsheet()
+            if recovered:
+                st.session_state.store_processed_qty = recovered.get("store_processed_qty", {store: 0 for store in store_total_qty})
+                st.session_state.completed_stores = set(recovered.get("completed_stores", []))
+                st.session_state.processed = set(recovered.get("processed", []))
+                st.session_state.processed_pairs = set(recovered.get("processed_pairs", []))
+                st.session_state.error_count = recovered.get("error_count", 0)
+                st.session_state.last_messages = recovered.get("last_messages", [])
+                st.session_state.last_main_message = tuple(recovered.get("last_main_message", ["info", "대기 중"]))
+                st.session_state.last_scan_plan = recovered.get("last_scan_plan", [])
+                st.session_state.last_scan_product = recovered.get("last_scan_product", "")
+                st.success("저장 데이터 복구 완료")
+                st.rerun()
+            else:
+                st.warning("복구할 저장 데이터가 없습니다.")
+        except Exception as e:
+            st.error(f"복구 실패: {e}")
 
 with top3:
     st.markdown('<p class="section-title">🧹 초기화</p>', unsafe_allow_html=True)
     if st.button("작업 데이터 초기화", use_container_width=True):
-        reset_state(store_total_qty)
-        st.success("작업 데이터 초기화 완료")
-        st.rerun()
+        try:
+            reset_state(store_total_qty)
+            st.success("작업 데이터 초기화 완료")
+            st.rerun()
+        except Exception as e:
+            st.error(f"초기화 실패: {e}")
 
 # ===============================
 # 작업자 모드
@@ -719,11 +769,12 @@ elif view_mode == "관리자 모드":
                             store_items.append({
                                 "product": item["product"],
                                 "qty": item["qty"],
-                                "barcode": barcode
+                                "barcode": barcode,
+                                "pair_key": f"{barcode}||{store}"
                             })
 
                 for item in store_items:
-                    is_done = item["product"] in st.session_state.processed_products
+                    is_done = item["pair_key"] in st.session_state.processed_pairs
                     card_class = "item-card item-card-done" if is_done else "item-card"
                     status_text = "✅ 완료" if is_done else "⏳ 대기"
                     st.markdown(
