@@ -41,7 +41,7 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 190px;
+    height: 200px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
