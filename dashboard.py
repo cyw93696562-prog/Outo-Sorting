@@ -55,14 +55,14 @@ html, body, [class*="css"] {{
 .logo-wrap {{
     display: flex;
     align-items: center;
-    height: 120px;
-    width: 520px;
+    height: 80px;
+    width: 350px;
     flex-shrink: 0;
 }}
 
 .logo-wrap img {{
-    width: 100%;
-    height: 100%;
+    width: auto;
+    height: auto;
     object-fit: contain;
     object-position: left center;
     display: block;
