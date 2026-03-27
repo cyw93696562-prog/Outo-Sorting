@@ -29,9 +29,11 @@ html, body, [class*="css"] {{
 }}
 
 .block-container {{
-    padding-top: 120px;
+    padding-top: 130px;
     padding-bottom: 1.2rem;
-    max-width: 1500px;
+    max-width: 100%;
+    padding-left: 20px;
+    padding-right: 20px;
 }}
 
 .fixed-header {{
@@ -39,43 +41,40 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 92px;
+    height: 110px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 10px 28px;
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }}
 
-.fixed-header img {{
-    height: 64px;
-    max-height: 350px;
-    width: auto;
-    object-fit: contain;
+.logo-wrap {{
+    display: flex;
+    align-items: center;
+    height: 90px;
+    width: 420px;
+    flex-shrink: 0;
 }}
 
-.header-title {{
-    font-size: 38px;
+.logo-wrap img {{
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: left center;
+    display: block;
+}}
+
+.header-title-only {{
+    font-size: 40px;
     font-weight: 900;
     color: #1d2f5f;
-    margin-left: 18px;
     line-height: 1;
-}}
-
-.header-sub {{
-    font-size: 16px;
-    font-weight: 700;
-    color: #5c6c90;
-    margin-left: 18px;
-    margin-top: 6px;
-}}
-
-.header-text-wrap {{
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    text-align: right;
+    margin-right: 10px;
 }}
 
 .section-title {{
@@ -184,73 +183,14 @@ html, body, [class*="css"] {{
     font-weight: 900;
     color: #1d2f5f;
 }}
-
-hr {{
-    margin-top: 0.6rem;
-    margin-bottom: 1rem;
-}}
-</style>
-
-st.markdown(f"""
-<style>
-html, body, [class*="css"] {{
-    font-family: Arial, Helvetica, sans-serif;
-}}
-
-.block-container {{
-    padding-top: 130px;
-    padding-bottom: 1.2rem;
-    max-width: 1500px;
-}}
-
-.fixed-header {{
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 110px;
-    background-color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 28px;
-    border-bottom: 2px solid #e6ebf2;
-    z-index: 99999;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}}
-
-.logo-wrap {{
-    display: flex;
-    align-items: center;
-    height: 90px;
-    width: 360px;
-    flex-shrink: 0;
-}}
-
-.logo-wrap img {{
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    object-position: left center;
-    display: block;
-}}
-
-.header-title-only {{
-    font-size: 40px;
-    font-weight: 900;
-    color: #1d2f5f;
-    line-height: 1;
-    text-align: right;
-}}
 </style>
 
 <div class="fixed-header">
     <div class="logo-wrap">
         {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
     </div>
-    <div class="header-title-only">DLL Sorting System</div>
+    <div class="header-title-only">Sorting System</div>
 </div>
-""", unsafe_allow_html=True)
 """, unsafe_allow_html=True)
 
 # ===============================
@@ -447,7 +387,10 @@ st.text_input(
     placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다"
 )
 
-st.markdown('<p class="small-caption">스캐너가 엔터를 보내면 자동 처리됩니다.</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p class="small-caption">스캐너가 엔터를 보내면 자동 처리됩니다.</p>',
+    unsafe_allow_html=True
+)
 
 html(
     """
