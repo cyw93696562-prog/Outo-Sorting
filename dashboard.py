@@ -483,8 +483,6 @@ html, body, [class*="css"] {
     margin: 0;
     white-space: nowrap;
 }
-</style>
-"""
 
 .section-title {
     font-size: 26px;
@@ -493,10 +491,6 @@ html, body, [class*="css"] {
     margin-top: 0px;
     margin-bottom: 8px;
 }
-</style>
-"""
-
-st.markdown(page_css, unsafe_allow_html=True)
 
 .select-box-area, .summary-card {
     background: #f8fafc;
@@ -594,9 +588,7 @@ header_html = f"""
     <div class="header-title-only">Sorting System</div>
 </div>
 """
-st.markdown(page_css, unsafe_allow_html=True)
 st.markdown(header_html, unsafe_allow_html=True)
-
 
 # ===============================
 # 초기 로딩
