@@ -29,7 +29,7 @@ html, body, [class*="css"] {{
 }}
 
 .block-container {{
-    padding-top: 150px;
+    padding-top: 130px;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
