@@ -347,7 +347,11 @@ def build_orders_and_store_map(filtered_df: pd.DataFrame):
         qty = safe_int(row["qty"])
         product = str(row["product"]).strip() if str(row["product"]).strip() else barcode
 
-        orders.setdefault(barcode, []).append(
+        orders.setdefault(
+            barcode,
+            [
+            ],
+        ).append(
             {
                 "store": store,
                 "qty": qty,
@@ -415,38 +419,21 @@ try:
 except Exception:
     logo_base64 = ""
 
-st.markdown(
-    """
+page_css = """
 <style>
-html, body, [class*="css"] {{
+html, body, [class*="css"] {
     font-family: Arial, Helvetica, sans-serif;
-}}
-.block-container {{
-    padding-top: 150px;
-    padding-bottom: 1.2rem;
-    max-width: 100%;
-    padding-left: 20px;
-    padding-right: 20px;
-}}
- z-index: 99999;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
-st.markdown(
-    f"""
-<style>
-html, body, [class*="css"] {{
-    font-family: Arial, Helvetica, sans-serif;
-}}
 
-.block-container {{
+.block-container {
     padding-top: 115px;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
     padding-right: 20px;
-}}
+}
 
-.fixed-header {{
+.fixed-header {
     position: fixed;
     top: 0;
     left: 0;
@@ -460,9 +447,9 @@ html, body, [class*="css"] {{
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}}
+}
 
-.logo-wrap {{
+.logo-wrap {
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -471,82 +458,69 @@ html, body, [class*="css"] {{
     width: auto;
     flex-shrink: 0;
     overflow: visible;
-}}
+}
 
-.logo-wrap img {{
+.logo-wrap img {
     max-height: 95px;
     width: auto;
     height: auto;
     object-fit: contain;
     object-position: left center;
     display: block;
-}}
+}
 
-.header-title-only {{
+.header-title-only {
     font-size: 42px;
     font-weight: 900;
     color: #1d2f5f;
     line-height: 1;
     text-align: right;
     margin-right: 10px;
-}}
-</style>
+}
 
-<div class="fixed-header">
-    <div class="logo-wrap">
-        {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
-    </div>
-    <div class="header-title-only">Sorting System</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
-}}
-.header-title-only {{
-    font-size: 42px;
-    font-weight: 900;
-    color: #1d2f5f;
-    line-height: 1;
-    text-align: right;
-    margin-right: 10px;
-}}
-.section-title {{
+.section-title {
     font-size: 26px;
     font-weight: 800;
     color: #1d2f5f;
-    margin-top: 10px;
-    margin-bottom: 10px;
-}}
-.mode-box, .select-box-area, .summary-card {{
+    margin-top: 0px;
+    margin-bottom: 8px;
+}
+
+.select-box-area, .summary-card {
     background: #f8fafc;
     border: 1px solid #e6ebf2;
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 14px;
-}}
-.big-banner {{
+}
+
+.big-banner {
     font-size: 30px;
     font-weight: 900;
     padding: 18px 20px;
     border-radius: 16px;
     margin-bottom: 14px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.10);
-}}
-.banner-success {{ background-color: #e8f5e9; color: #1b5e20; }}
-.banner-error {{ background-color: #ffebee; color: #b71c1c; }}
-.banner-warning {{ background-color: #fff8e1; color: #8d6e00; }}
-.big-message {{
+}
+
+.banner-success { background-color: #e8f5e9; color: #1b5e20; }
+.banner-error { background-color: #ffebee; color: #b71c1c; }
+.banner-warning { background-color: #fff8e1; color: #8d6e00; }
+
+.big-message {
     font-size: 20px;
     font-weight: 800;
     padding: 12px 14px;
     border-radius: 12px;
     margin-bottom: 8px;
-}}
-.msg-success {{ background-color: #e8f5e9; color: #1b5e20; }}
-.msg-warning {{ background-color: #fff8e1; color: #8d6e00; }}
-.msg-error {{ background-color: #ffebee; color: #b71c1c; }}
-.msg-info {{ background-color: #f3f6fb; color: #1f3b5c; }}
-.plan-card {{
+}
+
+.msg-success { background-color: #e8f5e9; color: #1b5e20; }
+.msg-warning { background-color: #fff8e1; color: #8d6e00; }
+.msg-error { background-color: #ffebee; color: #b71c1c; }
+.msg-info { background-color: #f3f6fb; color: #1f3b5c; }
+
+.plan-card {
     font-size: 22px;
     font-weight: 800;
     padding: 16px 18px;
@@ -559,10 +533,12 @@ html, body, [class*="css"] {{
     flex-direction: column;
     justify-content: center;
     margin-bottom: 10px;
-}}
-.plan-store {{ font-size: 26px; font-weight: 900; margin-bottom: 8px; }}
-.plan-sub {{ font-size: 18px; font-weight: 700; }}
-.item-card {{
+}
+
+.plan-store { font-size: 26px; font-weight: 900; margin-bottom: 8px; }
+.plan-sub { font-size: 18px; font-weight: 700; }
+
+.item-card {
     font-size: 18px;
     font-weight: 700;
     margin-bottom: 8px;
@@ -571,13 +547,15 @@ html, body, [class*="css"] {{
     background-color: #f7f8fb;
     color: #1f3b5c;
     border: 1px solid #e6ebf2;
-}}
-.item-card-done {{
+}
+
+.item-card-done {
     background-color: #e8f5e9;
     color: #1b5e20;
     border: 1px solid #b7dfb9;
-}}
-.store-done {{
+}
+
+.store-done {
     font-size: 20px;
     font-weight: 800;
     margin-bottom: 10px;
@@ -585,22 +563,26 @@ html, body, [class*="css"] {{
     border-radius: 12px;
     background-color: #eef7ee;
     color: #1b5e20;
-}}
-.summary-label {{ font-size: 18px; font-weight: 700; color: #4d5b7c; margin-bottom: 8px; }}
-.summary-value {{ font-size: 34px; font-weight: 900; color: #1d2f5f; }}
-.small-caption {{ font-size: 18px !important; color: #5d6b89; }}
-.stTextInput label {{ font-size: 24px !important; font-weight: 800 !important; }}
-.stTextInput input {{ font-size: 32px !important; height: 72px !important; font-weight: 700 !important; }}
+}
+
+.summary-label { font-size: 18px; font-weight: 700; color: #4d5b7c; margin-bottom: 8px; }
+.summary-value { font-size: 34px; font-weight: 900; color: #1d2f5f; }
+.small-caption { font-size: 18px !important; color: #5d6b89; }
+.stTextInput label { font-size: 24px !important; font-weight: 800 !important; }
+.stTextInput input { font-size: 32px !important; height: 72px !important; font-weight: 700 !important; }
 </style>
-<div class="fixed-header">
-    <div class="logo-wrap">
-        {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
-    </div>
-    <div class="header-title-only">Sorting System</div>
+"""
+
+st.markdown(page_css, unsafe_allow_html=True)
+
+header_logo_html = f"<img src='data:image/gif;base64,{logo_base64}'>" if logo_base64 else ""
+header_html = f"""
+<div class=\"fixed-header\">
+    <div class=\"logo-wrap\">{header_logo_html}</div>
+    <div class=\"header-title-only\">Sorting System</div>
 </div>
-""",
-    unsafe_allow_html=True,
-)
+"""
+st.markdown(header_html, unsafe_allow_html=True)
 
 
 # ===============================
@@ -700,7 +682,8 @@ def recover_saved_state():
         restore_runtime_state(recovered, store_total_qty)
         st.success("저장 데이터 복구 완료")
         st.rerun()
-    st.warning("복구할 저장 데이터가 없습니다.")
+    else:
+        st.warning("복구할 저장 데이터가 없습니다.")
 
 
 def refresh_orders():
@@ -759,7 +742,6 @@ def process_barcode():
     log_rows = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     work_key = st.session_state.selected_work_key
-
     processed_barcode_key = make_processed_barcode_key(work_key, barcode)
 
     if not work_key:
@@ -906,7 +888,6 @@ st.session_state.view_mode = st.session_state[VIEW_MODE_KEY]
 # ===============================
 if st.session_state.view_mode == "차수선택":
     st.markdown('<p class="section-title">📦 작업 차수 선택</p>', unsafe_allow_html=True)
-    st.markdown('<div class="select-box-area">', unsafe_allow_html=True)
 
     c1, c2 = st.columns([3, 1])
     labels = [x["label"] for x in work_options]
@@ -932,8 +913,6 @@ if st.session_state.view_mode == "차수선택":
         st.markdown("")
         if st.button("선택 차수 적용", use_container_width=True, disabled=not work_options):
             apply_selected_work()
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.selected_work_key:
         st.info(
