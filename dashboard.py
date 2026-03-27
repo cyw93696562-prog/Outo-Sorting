@@ -531,11 +531,27 @@ if "selected_order_date" not in st.session_state:
         st.session_state.selected_order_date = work_options[0]["order_date"]
         st.session_state.selected_wave = work_options[0]["wave"]
         st.session_state.selected_status = work_options[0]["status"]
-        st.session_state.selected_work_key = work_options[0]["work_key"]
     else:
         st.session_state.selected_order_date = ""
         st.session_state.selected_wave = ""
         st.session_state.selected_status = ""
+
+# selected_work_key는 따로 항상 보정
+if "selected_work_key" not in st.session_state:
+    if (
+        "selected_order_date" in st.session_state
+        and "selected_wave" in st.session_state
+        and "selected_status" in st.session_state
+        and st.session_state.selected_order_date
+        and st.session_state.selected_wave
+        and st.session_state.selected_status
+    ):
+        st.session_state.selected_work_key = make_work_key(
+            st.session_state.selected_order_date,
+            st.session_state.selected_wave,
+            st.session_state.selected_status
+        )
+    else:
         st.session_state.selected_work_key = ""
 
 # ===============================
