@@ -837,9 +837,6 @@ def make_total_donut(done, total):
 # ===============================
 # 상단 모드 전환
 # ===============================
-st.markdown('<p class="section-title">🖥️ 화면 모드</p>', unsafe_allow_html=True)
-st.markdown('<div class="mode-box">', unsafe_allow_html=True)
-
 if VIEW_MODE_KEY not in st.session_state or st.session_state[VIEW_MODE_KEY] not in VIEW_MODES:
     st.session_state[VIEW_MODE_KEY] = st.session_state.get("view_mode", "차수선택")
 
@@ -859,8 +856,6 @@ st.radio(
 )
 
 st.session_state.view_mode = st.session_state[VIEW_MODE_KEY]
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ===============================
