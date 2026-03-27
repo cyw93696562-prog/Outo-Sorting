@@ -19,6 +19,7 @@ SCOPES = [
 ]
 VALID_STATUS = ["작업전", "진행중", "작업완료"]
 VIEW_MODES = ["차수선택", "작업화면", "내역확인", "진척율"]
+VIEW_MODE_KEY = "view_mode_radio"
 
 
 # ===============================
@@ -173,6 +174,7 @@ def get_default_runtime_state(store_total_qty=None):
         "selected_work_key": "",
         "pending_work_key": "",
         "view_mode": "차수선택",
+        VIEW_MODE_KEY: "차수선택",
         "store_processed_qty": {store: 0 for store in store_total_qty},
         "completed_stores": set(),
         "processed": set(),
@@ -277,6 +279,7 @@ def restore_runtime_state(loaded_state, store_total_qty):
     st.session_state.selected_work_key = loaded_state.get("selected_work_key", "")
     st.session_state.pending_work_key = loaded_state.get("pending_work_key", st.session_state.selected_work_key)
     st.session_state.view_mode = loaded_state.get("view_mode", "차수선택")
+    st.session_state[VIEW_MODE_KEY] = st.session_state.view_mode
     st.session_state.store_processed_qty = loaded_state.get("store_processed_qty", {store: 0 for store in store_total_qty})
     st.session_state.completed_stores = set(loaded_state.get("completed_stores", []))
     st.session_state.processed = set(loaded_state.get("processed", []))
@@ -632,6 +635,7 @@ def apply_selected_work():
     reset_progress(new_store_total_qty)
     st.session_state.last_main_message = ("info", "차수를 적용했습니다.")
     st.session_state.view_mode = "작업화면"
+    st.session_state[VIEW_MODE_KEY] = "작업화면"
     save_state_to_gsheet()
     st.rerun()
 
@@ -823,13 +827,15 @@ def make_total_donut(done, total):
 # ===============================
 st.markdown('<p class="section-title">🖥️ 화면 모드</p>', unsafe_allow_html=True)
 st.markdown('<div class="mode-box">', unsafe_allow_html=True)
-st.radio(
+selected_view_mode = st.radio(
     "화면 모드",
     VIEW_MODES,
-    key="view_mode",
+    index=VIEW_MODES.index(st.session_state.get("view_mode", "차수선택")) if st.session_state.get("view_mode", "차수선택") in VIEW_MODES else 0,
+    key=VIEW_MODE_KEY,
     horizontal=True,
     label_visibility="collapsed",
 )
+st.session_state.view_mode = selected_view_mode
 st.markdown('</div>', unsafe_allow_html=True)
 
 
