@@ -389,11 +389,6 @@ st.text_input(
     placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다"
 )
 
-st.markdown(
-    '<p class="small-caption">스캐너가 엔터를 보내면 자동 처리됩니다.</p>',
-    unsafe_allow_html=True
-)
-
 html(
     """
     <script>
