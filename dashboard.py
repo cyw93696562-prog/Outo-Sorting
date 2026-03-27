@@ -55,7 +55,7 @@ html, body, [class*="css"] {{
 .logo-wrap {{
     display: flex;
     align-items: center;
-    height: 100px;
+    height: 20px;
     width: 320px;
     flex-shrink: 0;
 }}
