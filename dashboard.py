@@ -134,7 +134,7 @@ col_logo, col_title = st.columns([1, 3])
 
 with col_logo:
     try:
-        st.image("dllogis_logo.gif", width=220)
+        st.image("dllogis_logo.gif", width=520)
     except Exception:
         st.warning("로고 파일을 찾지 못했습니다. 저장소에 dllogis_logo.gif를 올려주세요.")
 
