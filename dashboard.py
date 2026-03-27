@@ -425,20 +425,47 @@ html, body, [class*="css"] {
     font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Streamlit 기본 상단 영역 숨김 */
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+
+div[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+div[data-testid="stDecoration"] {
+    display: none !important;
+}
+
+div[data-testid="stStatusWidget"] {
+    display: none !important;
+}
+
+#MainMenu {
+    visibility: hidden !important;
+}
+
+footer {
+    visibility: hidden !important;
+}
+
+/* 본문 시작 위치 */
 .block-container {
-    padding-top: 120px;
+    padding-top: 115px !important;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
     padding-right: 20px;
 }
 
+/* 자체 헤더 */
 .fixed-header {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
-    height: 110px;
+    height: 100px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
@@ -450,6 +477,7 @@ html, body, [class*="css"] {
     box-sizing: border-box;
 }
 
+/* 왼쪽 로고 */
 .logo-wrap {
     display: flex;
     align-items: center;
@@ -460,7 +488,7 @@ html, body, [class*="css"] {
 }
 
 .logo-wrap img {
-    max-height: 72px;
+    max-height: 68px;
     max-width: 100%;
     width: auto;
     height: auto;
@@ -469,12 +497,13 @@ html, body, [class*="css"] {
     display: block;
 }
 
+/* 오른쪽 타이틀 */
 .header-title-only {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     height: 100%;
-    font-size: 44px;
+    font-size: 42px;
     font-weight: 900;
     color: #1d2f5f;
     line-height: 1;
