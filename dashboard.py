@@ -29,7 +29,7 @@ html, body, [class*="css"] {{
 }}
 
 .block-container {{
-    padding-top: 130px;
+    padding-top: 170px;
     padding-bottom: 1.2rem;
     max-width: 100%;
     padding-left: 20px;
@@ -41,12 +41,12 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 110px;
+    height: 150px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 28px;
+    padding: 18px 28px;
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -55,8 +55,8 @@ html, body, [class*="css"] {{
 .logo-wrap {{
     display: flex;
     align-items: center;
-    height: 90px;
-    width: 420px;
+    height: 120px;
+    width: 520px;
     flex-shrink: 0;
 }}
 
