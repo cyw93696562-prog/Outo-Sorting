@@ -41,7 +41,7 @@ html, body, [class*="css"] {{
     top: 0;
     left: 0;
     width: 100%;
-    height: 130px;
+    height: 200px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
@@ -55,7 +55,7 @@ html, body, [class*="css"] {{
 .logo-wrap {{
     display: flex;
     align-items: center;
-    height: 20px;
+    height: 80px;
     width: 320px;
     flex-shrink: 0;
 }}
