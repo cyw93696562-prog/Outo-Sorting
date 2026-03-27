@@ -1,14 +1,15 @@
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-from streamlit.components.v1 import html
 import base64
 import json
 import time
 from datetime import datetime
+
 import gspread
-from gspread.exceptions import APIError
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import APIError
+from streamlit.components.v1 import html
 
 st.set_page_config(page_title="DLL Sorting System", layout="wide")
 
@@ -16,13 +17,37 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-
 VALID_STATUS = ["작업전", "진행중", "작업완료"]
+VIEW_MODES = ["차수선택", "작업화면", "내역확인", "진척율"]
+
+
+# ===============================
+# 공통 유틸
+# ===============================
+def make_work_key(order_date: str, wave: str, status: str) -> str:
+    return f"{order_date}||{wave}||{status}"
+
+
+def make_processed_barcode_key(work_key: str, barcode: str) -> str:
+    return f"{work_key}||{barcode}"
+
+
+def make_processed_pair_key(work_key: str, barcode: str, store: str) -> str:
+    return f"{work_key}||{barcode}||{store}"
+
+
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
 
 # ===============================
 # Google Sheets 연결
 # ===============================
 @st.cache_resource
+
 def get_gspread_client():
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
@@ -30,17 +55,27 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-@st.cache_resource
-def get_spreadsheet():
-    gc = get_gspread_client()
-    return gc.open_by_key(st.secrets["google_sheet"]["spreadsheet_key"])
 
 @st.cache_resource
+
+def get_spreadsheet():
+    return get_gspread_client().open_by_key(st.secrets["google_sheet"]["spreadsheet_key"])
+
+
+@st.cache_resource
+
 def get_state_logs_worksheets():
     sh = get_spreadsheet()
-    ws_state = sh.worksheet(st.secrets["google_sheet"]["state_worksheet"])
-    ws_logs = sh.worksheet(st.secrets["google_sheet"]["logs_worksheet"])
-    return ws_state, ws_logs
+    return (
+        sh.worksheet(st.secrets["google_sheet"]["state_worksheet"]),
+        sh.worksheet(st.secrets["google_sheet"]["logs_worksheet"]),
+    )
+
+
+def get_orders_ws():
+    return get_spreadsheet().worksheet(st.secrets["google_sheet"]["orders_worksheet"])
+
+
 
 def retry_gsheet(func, *args, max_retries=4, **kwargs):
     last_error = None
@@ -55,19 +90,19 @@ def retry_gsheet(func, *args, max_retries=4, **kwargs):
                 raise
     raise last_error
 
+
 @st.cache_data(ttl=60)
 def load_orders_from_gsheet():
-    sh = get_spreadsheet()
-    ws_orders = sh.worksheet(st.secrets["google_sheet"]["orders_worksheet"])
-
+    ws_orders = get_orders_ws()
     all_values = retry_gsheet(ws_orders.get_all_values)
+
     if not all_values or len(all_values) < 2:
         raise ValueError("orders 탭에 데이터가 없습니다.")
 
     header = [str(x).strip() for x in all_values[0]]
     required_cols = ["order_date", "wave", "status", "barcode", "product", "store", "qty"]
-
     header_index = {}
+
     for col in required_cols:
         if col not in header:
             raise ValueError(f"orders 탭 컬럼 누락: {col}")
@@ -83,31 +118,29 @@ def load_orders_from_gsheet():
             idx = header_index[col]
             value = raw_row[idx] if idx < len(raw_row) else ""
             row_dict[col] = str(value).strip()
-
         rows.append(row_dict)
 
     df = pd.DataFrame(rows)
-
-    # product 비어있으면 barcode로 대체
     df["barcode"] = df["barcode"].astype(str).str.strip()
     df["product"] = df["product"].astype(str).str.strip()
     df.loc[df["product"] == "", "product"] = df["barcode"]
-
     df["order_date"] = df["order_date"].astype(str).str.strip()
     df["wave"] = df["wave"].astype(str).str.strip()
     df["status"] = df["status"].astype(str).str.strip()
     df["store"] = df["store"].astype(str).str.strip()
-    df["qty"] = df["qty"].astype(int)
+    df["qty"] = df["qty"].apply(safe_int)
 
     return df
+
+
 
 def clear_orders_cache():
     load_orders_from_gsheet.clear()
 
-def get_orders_ws():
-    sh = get_spreadsheet()
-    return sh.worksheet(st.secrets["google_sheet"]["orders_worksheet"])
 
+# ===============================
+# 저장/복구
+# ===============================
 def ensure_sheet_headers_once():
     ws_state, ws_logs = get_state_logs_worksheets()
 
@@ -115,7 +148,7 @@ def ensure_sheet_headers_once():
     if not state_row or len(state_row) == 0:
         retry_gsheet(ws_state.update, "A1:C2", [
             ["key", "value_json", "saved_at"],
-            ["current_state", "{}", ""]
+            ["current_state", "{}", ""],
         ])
     else:
         row1 = state_row[0] if len(state_row) >= 1 else []
@@ -125,12 +158,43 @@ def ensure_sheet_headers_once():
             retry_gsheet(ws_state.update, "A2:C2", [["current_state", "{}", ""]])
 
     logs_row = retry_gsheet(ws_logs.get, "A1:G1")
-    if not logs_row or len(logs_row) == 0 or logs_row[0][:7] != [
-        "saved_at", "work_key", "barcode", "product", "store", "qty", "chute"
-    ]:
-        retry_gsheet(ws_logs.update, "A1:G1", [[
-            "saved_at", "work_key", "barcode", "product", "store", "qty", "chute"
-        ]])
+    expected = ["saved_at", "work_key", "barcode", "product", "store", "qty", "chute"]
+    if not logs_row or len(logs_row) == 0 or logs_row[0][:7] != expected:
+        retry_gsheet(ws_logs.update, "A1:G1", [expected])
+
+
+
+def get_default_runtime_state(store_total_qty=None):
+    store_total_qty = store_total_qty or {}
+    return {
+        "selected_order_date": "",
+        "selected_wave": "",
+        "selected_status": "",
+        "selected_work_key": "",
+        "pending_work_key": "",
+        "view_mode": "차수선택",
+        "store_processed_qty": {store: 0 for store in store_total_qty},
+        "completed_stores": set(),
+        "processed": set(),
+        "processed_pairs": set(),
+        "error_count": 0,
+        "last_messages": [],
+        "last_main_message": ("info", "대기 중"),
+        "last_scan_plan": [],
+        "last_scan_product": "",
+        "play_success_sound": False,
+        "barcode_input": "",
+    }
+
+
+
+def apply_default_state_once(store_total_qty=None):
+    defaults = get_default_runtime_state(store_total_qty)
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
 
 def save_state_to_gsheet():
     ws_state, _ = get_state_logs_worksheets()
@@ -140,6 +204,8 @@ def save_state_to_gsheet():
         "selected_wave": st.session_state.selected_wave,
         "selected_status": st.session_state.selected_status,
         "selected_work_key": st.session_state.selected_work_key,
+        "pending_work_key": st.session_state.pending_work_key,
+        "view_mode": st.session_state.view_mode,
         "store_processed_qty": st.session_state.store_processed_qty,
         "completed_stores": list(st.session_state.completed_stores),
         "processed": list(st.session_state.processed),
@@ -153,24 +219,18 @@ def save_state_to_gsheet():
     }
 
     payload = json.dumps(state_data, ensure_ascii=False)
-    retry_gsheet(
-        ws_state.update,
-        "A2:C2",
-        [["current_state", payload, state_data["saved_at"]]]
-    )
+    retry_gsheet(ws_state.update, "A2:C2", [["current_state", payload, state_data["saved_at"]]])
+
+
 
 def load_state_from_gsheet():
     ws_state, _ = get_state_logs_worksheets()
     row = retry_gsheet(ws_state.get, "A2:C2")
-
     if not row or len(row) == 0:
         return None
 
     values = row[0]
-    if len(values) < 2:
-        return None
-
-    if values[0] != "current_state":
+    if len(values) < 2 or values[0] != "current_state":
         return None
 
     raw_json = values[1].strip() if len(values) >= 2 else ""
@@ -182,14 +242,17 @@ def load_state_from_gsheet():
     except Exception:
         return None
 
-def append_log_rows(rows):
-    if not rows:
-        return
-    _, ws_logs = get_state_logs_worksheets()
-    retry_gsheet(ws_logs.append_rows, rows)
 
-def reset_state(current_store_total_qty):
-    st.session_state.store_processed_qty = {store: 0 for store in current_store_total_qty}
+
+def append_log_rows(rows):
+    if rows:
+        _, ws_logs = get_state_logs_worksheets()
+        retry_gsheet(ws_logs.append_rows, rows)
+
+
+
+def reset_progress(store_total_qty):
+    st.session_state.store_processed_qty = {store: 0 for store in store_total_qty}
     st.session_state.completed_stores = set()
     st.session_state.processed = set()
     st.session_state.processed_pairs = set()
@@ -199,18 +262,112 @@ def reset_state(current_store_total_qty):
     st.session_state.last_scan_plan = []
     st.session_state.last_scan_product = ""
     st.session_state.play_success_sound = False
-    save_state_to_gsheet()
+    st.session_state.barcode_input = ""
 
-def make_work_key(order_date, wave, status):
-    return f"{order_date}||{wave}||{status}"
 
-def make_processed_barcode_key(work_key, barcode):
-    return f"{work_key}||{barcode}"
 
-def make_processed_pair_key(work_key, barcode, store):
-    return f"{work_key}||{barcode}||{store}"
+def restore_runtime_state(loaded_state, store_total_qty):
+    if not loaded_state:
+        reset_progress(store_total_qty)
+        return
 
-def mark_selected_group_status(new_status: str):
+    st.session_state.selected_order_date = loaded_state.get("selected_order_date", "")
+    st.session_state.selected_wave = loaded_state.get("selected_wave", "")
+    st.session_state.selected_status = loaded_state.get("selected_status", "")
+    st.session_state.selected_work_key = loaded_state.get("selected_work_key", "")
+    st.session_state.pending_work_key = loaded_state.get("pending_work_key", st.session_state.selected_work_key)
+    st.session_state.view_mode = loaded_state.get("view_mode", "차수선택")
+    st.session_state.store_processed_qty = loaded_state.get("store_processed_qty", {store: 0 for store in store_total_qty})
+    st.session_state.completed_stores = set(loaded_state.get("completed_stores", []))
+    st.session_state.processed = set(loaded_state.get("processed", []))
+    st.session_state.processed_pairs = set(loaded_state.get("processed_pairs", []))
+    st.session_state.error_count = loaded_state.get("error_count", 0)
+    st.session_state.last_messages = loaded_state.get("last_messages", [])
+    st.session_state.last_main_message = tuple(loaded_state.get("last_main_message", ["info", "대기 중"]))
+    st.session_state.last_scan_plan = loaded_state.get("last_scan_plan", [])
+    st.session_state.last_scan_product = loaded_state.get("last_scan_product", "")
+    st.session_state.play_success_sound = False
+    st.session_state.barcode_input = ""
+
+
+# ===============================
+# 데이터 가공
+# ===============================
+def build_work_options(df: pd.DataFrame):
+    work_groups = (
+        df[["order_date", "wave", "status"]]
+        .drop_duplicates()
+        .sort_values(by=["order_date", "wave", "status"])
+        .reset_index(drop=True)
+    )
+
+    options = []
+    for _, row in work_groups.iterrows():
+        label = f'{row["order_date"]} | Wave {row["wave"]} | {row["status"]}'
+        options.append({
+            "label": label,
+            "order_date": row["order_date"],
+            "wave": row["wave"],
+            "status": row["status"],
+            "work_key": make_work_key(row["order_date"], row["wave"], row["status"]),
+        })
+    return options
+
+
+
+def find_option_by_work_key(work_options, work_key):
+    return next((x for x in work_options if x["work_key"] == work_key), None)
+
+
+
+def get_filtered_df(df: pd.DataFrame, work_key: str):
+    if not work_key:
+        return df.iloc[0:0].copy()
+
+    order_date, wave, status = work_key.split("||")
+    return df[
+        (df["order_date"] == order_date)
+        & (df["wave"] == wave)
+        & (df["status"] == status)
+    ].copy()
+
+
+
+def build_orders_and_store_map(filtered_df: pd.DataFrame):
+    orders = {}
+    for _, row in filtered_df.iterrows():
+        barcode = str(row["barcode"]).strip()
+        store = str(row["store"]).strip()
+        qty = safe_int(row["qty"])
+        product = str(row["product"]).strip() if str(row["product"]).strip() else barcode
+
+        orders.setdefault(barcode, []).append({
+            "store": store,
+            "qty": qty,
+            "product": product,
+        })
+
+    store_total_qty = {}
+    for items in orders.values():
+        for item in items:
+            store_total_qty[item["store"]] = store_total_qty.get(item["store"], 0) + item["qty"]
+
+    sorted_stores = sorted(store_total_qty.items(), key=lambda x: x[1], reverse=True)
+    store_map = {store: idx + 1 for idx, (store, _) in enumerate(sorted_stores)}
+    return orders, store_total_qty, sorted_stores, store_map
+
+
+
+def sync_progress_keys(store_total_qty):
+    for store in store_total_qty:
+        if store not in st.session_state.store_processed_qty:
+            st.session_state.store_processed_qty[store] = 0
+
+
+# ===============================
+# orders 상태 변경
+# ===============================
+def mark_selected_group_status(order_date: str, wave: str, current_status: str, new_status: str):
     ws_orders = get_orders_ws()
     all_values = retry_gsheet(ws_orders.get_all_values)
     if not all_values or len(all_values) < 2:
@@ -218,39 +375,32 @@ def mark_selected_group_status(new_status: str):
 
     headers = all_values[0]
     col_idx = {name: idx for idx, name in enumerate(headers)}
-
-    required = ["order_date", "wave", "status"]
-    for col in required:
+    for col in ["order_date", "wave", "status"]:
         if col not in col_idx:
             raise ValueError(f"orders 탭 컬럼 누락: {col}")
 
     status_col_letter = gspread.utils.rowcol_to_a1(1, col_idx["status"] + 1)[:-1]
-
     updates = []
-    for row_num, row in enumerate(all_values[1:], start=2):
-        order_date = str(row[col_idx["order_date"]]).strip() if len(row) > col_idx["order_date"] else ""
-        wave = str(row[col_idx["wave"]]).strip() if len(row) > col_idx["wave"] else ""
-        status = str(row[col_idx["status"]]).strip() if len(row) > col_idx["status"] else ""
 
-        if (
-            order_date == st.session_state.selected_order_date
-            and wave == st.session_state.selected_wave
-            and status == st.session_state.selected_status
-        ):
-            updates.append({
-                "range": f"{status_col_letter}{row_num}",
-                "values": [[new_status]]
-            })
+    for row_num, row in enumerate(all_values[1:], start=2):
+        row_order_date = str(row[col_idx["order_date"]]).strip() if len(row) > col_idx["order_date"] else ""
+        row_wave = str(row[col_idx["wave"]]).strip() if len(row) > col_idx["wave"] else ""
+        row_status = str(row[col_idx["status"]]).strip() if len(row) > col_idx["status"] else ""
+
+        if row_order_date == order_date and row_wave == wave and row_status == current_status:
+            updates.append({"range": f"{status_col_letter}{row_num}", "values": [[new_status]]})
 
     if updates:
         retry_gsheet(ws_orders.batch_update, updates)
 
+
 # ===============================
-# 로고
+# 스타일 / 헤더
 # ===============================
 def get_base64_image(image_path):
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
+
 
 logo_base64 = ""
 try:
@@ -258,15 +408,12 @@ try:
 except Exception:
     logo_base64 = ""
 
-# ===============================
-# 스타일
-# ===============================
-st.markdown(f"""
+st.markdown(
+    f"""
 <style>
 html, body, [class*="css"] {{
     font-family: Arial, Helvetica, sans-serif;
 }}
-
 .block-container {{
     padding-top: 150px;
     padding-bottom: 1.2rem;
@@ -274,13 +421,12 @@ html, body, [class*="css"] {{
     padding-left: 20px;
     padding-right: 20px;
 }}
-
 .fixed-header {{
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
-    height: 200px;
+    height: 170px;
     background-color: #ffffff;
     display: flex;
     align-items: center;
@@ -290,7 +436,6 @@ html, body, [class*="css"] {{
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }}
-
 .logo-wrap {{
     display: flex;
     align-items: center;
@@ -298,7 +443,6 @@ html, body, [class*="css"] {{
     width: 320px;
     flex-shrink: 0;
 }}
-
 .logo-wrap img {{
     max-height: 100%;
     max-width: 100%;
@@ -308,7 +452,6 @@ html, body, [class*="css"] {{
     object-position: left center;
     display: block;
 }}
-
 .header-title-only {{
     font-size: 42px;
     font-weight: 900;
@@ -317,93 +460,42 @@ html, body, [class*="css"] {{
     text-align: right;
     margin-right: 10px;
 }}
-
 .section-title {{
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 800;
     color: #1d2f5f;
     margin-top: 10px;
     margin-bottom: 10px;
 }}
-
-.stTextInput label {{
-    font-size: 24px !important;
-    font-weight: 800 !important;
+.mode-box, .select-box-area, .summary-card {{
+    background: #f8fafc;
+    border: 1px solid #e6ebf2;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
 }}
-
-.stTextInput input {{
-    font-size: 32px !important;
-    height: 72px !important;
-    font-weight: 700 !important;
-}}
-
-.small-caption {{
-    font-size: 18px !important;
-    color: #5d6b89;
-}}
-
 .big-banner {{
-    font-size: 32px;
+    font-size: 30px;
     font-weight: 900;
-    padding: 20px 22px;
+    padding: 18px 20px;
     border-radius: 16px;
     margin-bottom: 14px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.10);
 }}
-
-.banner-success {{
-    background-color: #e8f5e9;
-    color: #1b5e20;
-}}
-
-.banner-error {{
-    background-color: #ffebee;
-    color: #b71c1c;
-}}
-
-.banner-warning {{
-    background-color: #fff8e1;
-    color: #8d6e00;
-}}
-
+.banner-success {{ background-color: #e8f5e9; color: #1b5e20; }}
+.banner-error {{ background-color: #ffebee; color: #b71c1c; }}
+.banner-warning {{ background-color: #fff8e1; color: #8d6e00; }}
 .big-message {{
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 800;
     padding: 12px 14px;
     border-radius: 12px;
     margin-bottom: 8px;
 }}
-
-.msg-success {{
-    background-color: #e8f5e9;
-    color: #1b5e20;
-}}
-
-.msg-warning {{
-    background-color: #fff8e1;
-    color: #8d6e00;
-}}
-
-.msg-error {{
-    background-color: #ffebee;
-    color: #b71c1c;
-}}
-
-.msg-info {{
-    background-color: #f3f6fb;
-    color: #1f3b5c;
-}}
-
-.store-done {{
-    font-size: 22px;
-    font-weight: 800;
-    margin-bottom: 10px;
-    padding: 12px 16px;
-    border-radius: 12px;
-    background-color: #eef7ee;
-    color: #1b5e20;
-}}
-
+.msg-success {{ background-color: #e8f5e9; color: #1b5e20; }}
+.msg-warning {{ background-color: #fff8e1; color: #8d6e00; }}
+.msg-error {{ background-color: #ffebee; color: #b71c1c; }}
+.msg-info {{ background-color: #f3f6fb; color: #1f3b5c; }}
 .plan-card {{
     font-size: 22px;
     font-weight: 800;
@@ -418,18 +510,8 @@ html, body, [class*="css"] {{
     justify-content: center;
     margin-bottom: 10px;
 }}
-
-.plan-store {{
-    font-size: 26px;
-    font-weight: 900;
-    margin-bottom: 8px;
-}}
-
-.plan-sub {{
-    font-size: 18px;
-    font-weight: 700;
-}}
-
+.plan-store {{ font-size: 26px; font-weight: 900; margin-bottom: 8px; }}
+.plan-sub {{ font-size: 18px; font-weight: 700; }}
 .item-card {{
     font-size: 18px;
     font-weight: 700;
@@ -440,53 +522,39 @@ html, body, [class*="css"] {{
     color: #1f3b5c;
     border: 1px solid #e6ebf2;
 }}
-
 .item-card-done {{
     background-color: #e8f5e9;
     color: #1b5e20;
     border: 1px solid #b7dfb9;
 }}
-
-.summary-card {{
-    background: #f8fafc;
-    border-radius: 14px;
-    padding: 18px 18px;
-    margin-bottom: 14px;
-    border: 1px solid #e6ebf2;
-}}
-
-.summary-label {{
+.store-done {{
     font-size: 20px;
-    font-weight: 700;
-    color: #4d5b7c;
-    margin-bottom: 8px;
+    font-weight: 800;
+    margin-bottom: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background-color: #eef7ee;
+    color: #1b5e20;
 }}
-
-.summary-value {{
-    font-size: 38px;
-    font-weight: 900;
-    color: #1d2f5f;
-}}
-
-.select-box-area {{
-    background: #f8fafc;
-    border: 1px solid #e6ebf2;
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 14px;
-}}
+.summary-label {{ font-size: 18px; font-weight: 700; color: #4d5b7c; margin-bottom: 8px; }}
+.summary-value {{ font-size: 34px; font-weight: 900; color: #1d2f5f; }}
+.small-caption {{ font-size: 18px !important; color: #5d6b89; }}
+.stTextInput label {{ font-size: 24px !important; font-weight: 800 !important; }}
+.stTextInput input {{ font-size: 32px !important; height: 72px !important; font-weight: 700 !important; }}
 </style>
-
 <div class="fixed-header">
     <div class="logo-wrap">
         {"<img src='data:image/gif;base64," + logo_base64 + "'>" if logo_base64 else ""}
     </div>
     <div class="header-title-only">Sorting System</div>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 
 # ===============================
-# 시트 초기화
+# 초기 로딩
 # ===============================
 if "sheet_initialized" not in st.session_state:
     try:
@@ -496,198 +564,157 @@ if "sheet_initialized" not in st.session_state:
         st.error(f"Google Sheets 연결 오류: {e}")
         st.stop()
 
-# ===============================
-# orders 읽기
-# ===============================
 try:
     df = load_orders_from_gsheet()
 except Exception as e:
     st.error(f"orders 탭 읽기 오류: {e}")
     st.stop()
 
-# ===============================
-# 차수 목록 준비
-# ===============================
-work_groups = (
-    df[["order_date", "wave", "status"]]
-    .drop_duplicates()
-    .sort_values(by=["order_date", "wave", "status"])
-    .reset_index(drop=True)
-)
+work_options = build_work_options(df)
+base_store_total_qty = {}
+apply_default_state_once(base_store_total_qty)
 
-work_options = []
-for _, row in work_groups.iterrows():
-    label = f'{row["order_date"]} | Wave {row["wave"]} | {row["status"]}'
-    work_options.append({
-        "label": label,
-        "order_date": row["order_date"],
-        "wave": row["wave"],
-        "status": row["status"],
-        "work_key": make_work_key(row["order_date"], row["wave"], row["status"])
-    })
+if not st.session_state.selected_work_key and work_options:
+    first = work_options[0]
+    st.session_state.selected_order_date = first["order_date"]
+    st.session_state.selected_wave = first["wave"]
+    st.session_state.selected_status = first["status"]
+    st.session_state.selected_work_key = first["work_key"]
+    st.session_state.pending_work_key = first["work_key"]
 
-if "selected_order_date" not in st.session_state:
-    if work_options:
-        st.session_state.selected_order_date = work_options[0]["order_date"]
-        st.session_state.selected_wave = work_options[0]["wave"]
-        st.session_state.selected_status = work_options[0]["status"]
-    else:
-        st.session_state.selected_order_date = ""
-        st.session_state.selected_wave = ""
-        st.session_state.selected_status = ""
-
-# selected_work_key는 따로 항상 보정
-if "selected_work_key" not in st.session_state:
-    if (
-        "selected_order_date" in st.session_state
-        and "selected_wave" in st.session_state
-        and "selected_status" in st.session_state
-        and st.session_state.selected_order_date
-        and st.session_state.selected_wave
-        and st.session_state.selected_status
-    ):
-        st.session_state.selected_work_key = make_work_key(
-            st.session_state.selected_order_date,
-            st.session_state.selected_wave,
-            st.session_state.selected_status
-        )
-    else:
-        st.session_state.selected_work_key = ""
-
-# ===============================
-# 현재 선택 차수 기준 필터
-# ===============================
-filtered_df = df[
-    (df["order_date"] == st.session_state.selected_order_date) &
-    (df["wave"] == st.session_state.selected_wave) &
-    (df["status"] == st.session_state.selected_status)
-].copy()
-
-orders = {}
-for _, row in filtered_df.iterrows():
-    barcode = str(row["barcode"]).strip()
-    store = str(row["store"]).strip()
-    qty = int(row["qty"])
-    product = str(row["product"]).strip() if str(row["product"]).strip() else barcode
-
-    if barcode not in orders:
-        orders[barcode] = []
-
-    orders[barcode].append({
-        "store": store,
-        "qty": qty,
-        "product": product
-    })
-
-store_total_qty = {}
-for items in orders.values():
-    for item in items:
-        store = item["store"]
-        qty = item["qty"]
-        store_total_qty[store] = store_total_qty.get(store, 0) + qty
-
-sorted_stores = sorted(
-    store_total_qty.items(),
-    key=lambda x: x[1],
-    reverse=True
-)
-
-store_map = {}
-chute_no = 1
-for store, _ in sorted_stores:
-    store_map[store] = chute_no
-    chute_no += 1
-
-# ===============================
-# 상태 로드
-# ===============================
 if "state_loaded" not in st.session_state:
     try:
         loaded_state = load_state_from_gsheet()
+        restore_runtime_state(loaded_state, base_store_total_qty)
+        st.session_state.state_loaded = True
     except Exception as e:
         st.error(f"저장 데이터 읽기 오류: {e}")
         st.stop()
 
-    if loaded_state:
-        st.session_state.selected_order_date = loaded_state.get("selected_order_date", st.session_state.selected_order_date)
-        st.session_state.selected_wave = loaded_state.get("selected_wave", st.session_state.selected_wave)
-        st.session_state.selected_status = loaded_state.get("selected_status", st.session_state.selected_status)
-        st.session_state.selected_work_key = loaded_state.get(
-            "selected_work_key",
-            make_work_key(
-                st.session_state.selected_order_date,
-                st.session_state.selected_wave,
-                st.session_state.selected_status
-            )
-        )
-        st.session_state.store_processed_qty = loaded_state.get("store_processed_qty", {store: 0 for store in store_total_qty})
-        st.session_state.completed_stores = set(loaded_state.get("completed_stores", []))
-        st.session_state.processed = set(loaded_state.get("processed", []))
-        st.session_state.processed_pairs = set(loaded_state.get("processed_pairs", []))
-        st.session_state.error_count = loaded_state.get("error_count", 0)
-        st.session_state.last_messages = loaded_state.get("last_messages", [])
-        st.session_state.last_main_message = tuple(loaded_state.get("last_main_message", ["info", "대기 중"]))
-        st.session_state.last_scan_plan = loaded_state.get("last_scan_plan", [])
-        st.session_state.last_scan_product = loaded_state.get("last_scan_product", "")
+# saved state가 현재 orders 목록과 안 맞을 때 보정
+if st.session_state.selected_work_key and not find_option_by_work_key(work_options, st.session_state.selected_work_key):
+    if work_options:
+        first = work_options[0]
+        st.session_state.selected_order_date = first["order_date"]
+        st.session_state.selected_wave = first["wave"]
+        st.session_state.selected_status = first["status"]
+        st.session_state.selected_work_key = first["work_key"]
+        st.session_state.pending_work_key = first["work_key"]
     else:
-        st.session_state.selected_work_key = make_work_key(
-            st.session_state.selected_order_date,
-            st.session_state.selected_wave,
-            st.session_state.selected_status
-        )
-        st.session_state.store_processed_qty = {store: 0 for store in store_total_qty}
-        st.session_state.completed_stores = set()
-        st.session_state.processed = set()
-        st.session_state.processed_pairs = set()
-        st.session_state.error_count = 0
-        st.session_state.last_messages = []
-        st.session_state.last_main_message = ("info", "대기 중")
-        st.session_state.last_scan_plan = []
-        st.session_state.last_scan_product = ""
+        st.session_state.selected_order_date = ""
+        st.session_state.selected_wave = ""
+        st.session_state.selected_status = ""
+        st.session_state.selected_work_key = ""
+        st.session_state.pending_work_key = ""
 
-    st.session_state.play_success_sound = False
-    st.session_state.barcode_input = ""
-    st.session_state.state_loaded = True
+active_work_key = st.session_state.selected_work_key
+filtered_df = get_filtered_df(df, active_work_key)
+orders, store_total_qty, sorted_stores, store_map = build_orders_and_store_map(filtered_df)
+sync_progress_keys(store_total_qty)
 
-if "play_success_sound" not in st.session_state:
-    st.session_state.play_success_sound = False
-
-if "barcode_input" not in st.session_state:
-    st.session_state.barcode_input = ""
-
-# 현재 차수 기준 매장 상태 보정
-for store in store_total_qty:
-    if store not in st.session_state.store_processed_qty:
-        st.session_state.store_processed_qty[store] = 0
 
 # ===============================
-# 유틸
+# 액션 함수
 # ===============================
+def apply_selected_work():
+    selected_item = find_option_by_work_key(work_options, st.session_state.pending_work_key)
+    if not selected_item:
+        st.warning("적용할 차수를 찾을 수 없습니다.")
+        return
+
+    st.session_state.selected_order_date = selected_item["order_date"]
+    st.session_state.selected_wave = selected_item["wave"]
+    st.session_state.selected_status = selected_item["status"]
+    st.session_state.selected_work_key = selected_item["work_key"]
+
+    new_filtered_df = get_filtered_df(df, selected_item["work_key"])
+    _, new_store_total_qty, _, _ = build_orders_and_store_map(new_filtered_df)
+    reset_progress(new_store_total_qty)
+    st.session_state.last_main_message = ("info", "차수를 적용했습니다.")
+    st.session_state.view_mode = "작업화면"
+    save_state_to_gsheet()
+    st.rerun()
+
+
+
+def recover_saved_state():
+    recovered = load_state_from_gsheet()
+    if recovered:
+        restore_runtime_state(recovered, store_total_qty)
+        st.success("저장 데이터 복구 완료")
+        st.rerun()
+    st.warning("복구할 저장 데이터가 없습니다.")
+
+
+
+def refresh_orders():
+    clear_orders_cache()
+    st.success("orders 탭 새로고침 완료")
+    st.rerun()
+
+
+
+def reset_current_work():
+    reset_progress(store_total_qty)
+    save_state_to_gsheet()
+    st.success("작업 데이터 초기화 완료")
+    st.rerun()
+
+
+
+def complete_current_work():
+    if not st.session_state.selected_work_key:
+        st.warning("먼저 작업 차수를 선택해주세요.")
+        return
+
+    order_date = st.session_state.selected_order_date
+    wave = st.session_state.selected_wave
+    current_status = st.session_state.selected_status
+
+    if current_status != "진행중":
+        st.warning("진행중 차수만 작업완료 처리할 수 있습니다.")
+        return
+
+    mark_selected_group_status(order_date, wave, current_status, "작업완료")
+    clear_orders_cache()
+    st.session_state.selected_status = "작업완료"
+    st.session_state.selected_work_key = make_work_key(order_date, wave, "작업완료")
+    st.session_state.last_main_message = ("success", "현재 차수를 작업완료로 변경했습니다.")
+    save_state_to_gsheet()
+    st.rerun()
+
+
+
 def play_beep():
     st.markdown(
         """
         <audio autoplay>
-            <source src="data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTAAAAAA/////wAAAP///wAAAP///wAAAP///wAAAP///wAAAP///w=="
-            type="audio/wav">
+            <source src="data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTAAAAAA/////wAAAP///wAAAP///wAAAP///wAAAP///wAAAP///w==" type="audio/wav">
         </audio>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
+
+
 
 def process_barcode():
     barcode = st.session_state.barcode_input.strip()
+    if not barcode:
+        return
+
     messages = []
     current_plan = []
     log_rows = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     work_key = st.session_state.selected_work_key
 
-    if not barcode:
-        return
-
     processed_barcode_key = make_processed_barcode_key(work_key, barcode)
 
-    if st.session_state.selected_status == "작업완료":
+    if not work_key:
+        st.session_state.last_main_message = ("warning", "⚠️ 먼저 차수를 선택해주세요.")
+        st.session_state.last_scan_plan = []
+        messages.append(("warning", "⚠️ 먼저 차수를 선택해주세요."))
+    elif st.session_state.selected_status == "작업완료":
         st.session_state.last_main_message = ("warning", "⚠️ 작업완료 차수에서는 스캔할 수 없습니다.")
         st.session_state.last_scan_plan = []
         messages.append(("warning", "⚠️ 작업완료 차수에서는 스캔할 수 없습니다."))
@@ -708,7 +735,7 @@ def process_barcode():
         for item in items:
             store = item["store"]
             qty = item["qty"]
-            product = item["product"] if item["product"] else barcode
+            product = item["product"] or barcode
 
             if store not in store_map:
                 st.session_state.last_main_message = ("error", f"❌ 매핑 없음 → {store}")
@@ -717,24 +744,17 @@ def process_barcode():
                 continue
 
             chute = store_map[store]
-            st.session_state.store_processed_qty[store] += qty
+            st.session_state.store_processed_qty[store] = st.session_state.store_processed_qty.get(store, 0) + qty
             messages.append(("info", f"👉 {product} → {store} {qty}개 (슈트 {chute})"))
 
             pair_key = make_processed_pair_key(work_key, barcode, store)
             st.session_state.processed_pairs.add(pair_key)
-
-            current_plan.append({
-                "store": store,
-                "qty": qty,
-                "chute": chute,
-                "product": product
-            })
-
+            current_plan.append({"store": store, "qty": qty, "chute": chute, "product": product})
             log_rows.append([now_str, work_key, barcode, product, store, qty, chute])
 
-            total = store_total_qty[store]
-            done = st.session_state.store_processed_qty[store]
-            if done >= total:
+            total = store_total_qty.get(store, 0)
+            done = st.session_state.store_processed_qty.get(store, 0)
+            if total > 0 and done >= total:
                 st.session_state.completed_stores.add(store)
 
         current_plan = sorted(current_plan, key=lambda x: x["chute"])
@@ -745,13 +765,18 @@ def process_barcode():
 
         if st.session_state.selected_status == "작업전":
             try:
-                mark_selected_group_status("진행중")
+                mark_selected_group_status(
+                    st.session_state.selected_order_date,
+                    st.session_state.selected_wave,
+                    "작업전",
+                    "진행중",
+                )
                 clear_orders_cache()
                 st.session_state.selected_status = "진행중"
                 st.session_state.selected_work_key = make_work_key(
                     st.session_state.selected_order_date,
                     st.session_state.selected_wave,
-                    "진행중"
+                    "진행중",
                 )
             except Exception:
                 pass
@@ -767,20 +792,15 @@ def process_barcode():
     except Exception as e:
         st.session_state.last_main_message = ("error", f"저장 실패: {e}")
 
+
+
 def make_total_donut(done, total):
     remain = max(total - done, 0)
     percent = 0 if total == 0 else round((done / total) * 100, 1)
 
     fig = go.Figure(data=[
-        go.Pie(
-            labels=["완료", "잔여"],
-            values=[done, remain],
-            hole=0.76,
-            textinfo="none",
-            sort=False
-        )
+        go.Pie(labels=["완료", "잔여"], values=[done, remain], hole=0.76, textinfo="none", sort=False)
     ])
-
     fig.update_layout(
         title={"text": "전체 진척율", "x": 0.5, "xanchor": "center", "font": {"size": 28}},
         showlegend=True,
@@ -791,165 +811,104 @@ def make_total_donut(done, total):
                 text=f"<b style='font-size:36px'>{percent}%</b><br><span style='font-size:22px'>{done}/{total}</span>",
                 x=0.5,
                 y=0.5,
-                showarrow=False
+                showarrow=False,
             )
-        ]
+        ],
     )
     return fig
 
+
 # ===============================
-# 상단 1: 작업 차수 선택 화면
+# 상단 모드 전환
 # ===============================
-st.markdown('<p class="section-title">📦 작업 차수 선택</p>', unsafe_allow_html=True)
-st.markdown('<div class="select-box-area">', unsafe_allow_html=True)
-
-sel1, sel2 = st.columns([3, 1])
-
-with sel1:
-    work_labels = [x["label"] for x in work_options]
-    current_label = ""
-    for x in work_options:
-        if x["work_key"] == st.session_state.selected_work_key:
-            current_label = x["label"]
-            break
-    if not current_label and work_labels:
-        current_label = work_labels[0]
-
-    selected_label = st.selectbox(
-        "작업 차수",
-        work_labels,
-        index=work_labels.index(current_label) if current_label in work_labels else 0
-    )
-
-with sel2:
-    st.markdown("")
-    st.markdown("")
-    if st.button("선택 차수 적용", use_container_width=True):
-        selected_item = next((x for x in work_options if x["label"] == selected_label), None)
-        if selected_item:
-            st.session_state.selected_order_date = selected_item["order_date"]
-            st.session_state.selected_wave = selected_item["wave"]
-            st.session_state.selected_status = selected_item["status"]
-            st.session_state.selected_work_key = selected_item["work_key"]
-
-            # 새 차수로 넘어갈 때 현재 차수 기준 진행 상태 초기화
-            new_filtered_df = df[
-                (df["order_date"] == selected_item["order_date"]) &
-                (df["wave"] == selected_item["wave"]) &
-                (df["status"] == selected_item["status"])
-            ].copy()
-
-            new_store_total_qty = {}
-            for _, r in new_filtered_df.iterrows():
-                store = str(r["store"]).strip()
-                qty = int(r["qty"])
-                new_store_total_qty[store] = new_store_total_qty.get(store, 0) + qty
-
-            st.session_state.store_processed_qty = {store: 0 for store in new_store_total_qty}
-            st.session_state.completed_stores = set()
-            st.session_state.processed = set()
-            st.session_state.processed_pairs = set()
-            st.session_state.last_messages = []
-            st.session_state.last_main_message = ("info", "차수를 적용했습니다.")
-            st.session_state.last_scan_plan = []
-            st.session_state.last_scan_product = ""
-            save_state_to_gsheet()
-            st.rerun()
-
+st.markdown('<p class="section-title">🖥️ 화면 모드</p>', unsafe_allow_html=True)
+st.markdown('<div class="mode-box">', unsafe_allow_html=True)
+st.radio(
+    "화면 모드",
+    VIEW_MODES,
+    key="view_mode",
+    horizontal=True,
+    label_visibility="collapsed",
+)
 st.markdown('</div>', unsafe_allow_html=True)
-st.info(f"현재 선택 차수: {st.session_state.selected_order_date} / Wave {st.session_state.selected_wave} / {st.session_state.selected_status}")
+
 
 # ===============================
-# 상단 2: 화면 모드
+# 화면 1: 차수선택
 # ===============================
-mode1, mode2, mode3, mode4 = st.columns([3, 1, 1, 1])
+if st.session_state.view_mode == "차수선택":
+    st.markdown('<p class="section-title">📦 작업 차수 선택</p>', unsafe_allow_html=True)
+    st.markdown('<div class="select-box-area">', unsafe_allow_html=True)
 
-with mode1:
-    st.markdown('<p class="section-title">🔐 화면 모드</p>', unsafe_allow_html=True)
-    view_mode = st.radio(
-        "화면 모드 선택",
-        ["작업자 모드", "관리자 모드", "진척율"],
-        horizontal=True,
-        label_visibility="collapsed"
+    c1, c2 = st.columns([3, 1])
+    labels = [x["label"] for x in work_options]
+
+    current_pending = find_option_by_work_key(work_options, st.session_state.pending_work_key)
+    current_label = current_pending["label"] if current_pending else (labels[0] if labels else "")
+
+    with c1:
+        selected_label = st.selectbox(
+            "작업 차수",
+            labels,
+            index=labels.index(current_label) if current_label in labels else 0,
+        ) if labels else st.selectbox("작업 차수", ["차수 없음"], index=0)
+
+        if labels:
+            selected_item = next((x for x in work_options if x["label"] == selected_label), None)
+            if selected_item:
+                st.session_state.pending_work_key = selected_item["work_key"]
+
+    with c2:
+        st.markdown("")
+        st.markdown("")
+        if st.button("선택 차수 적용", use_container_width=True, disabled=not work_options):
+            apply_selected_work()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.session_state.selected_work_key:
+        st.info(
+            f"현재 적용 차수: {st.session_state.selected_order_date} / Wave {st.session_state.selected_wave} / {st.session_state.selected_status}"
+        )
+    else:
+        st.warning("현재 적용된 차수가 없습니다.")
+
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        if st.button("저장 데이터 복구", use_container_width=True):
+            recover_saved_state()
+    with a2:
+        if st.button("오더 새로고침", use_container_width=True):
+            refresh_orders()
+    with a3:
+        if st.button("작업 데이터 초기화", use_container_width=True):
+            reset_current_work()
+
+
+# ===============================
+# 화면 2: 작업화면
+# ===============================
+elif st.session_state.view_mode == "작업화면":
+    st.info(
+        f"현재 작업 차수: {st.session_state.selected_order_date} / Wave {st.session_state.selected_wave} / {st.session_state.selected_status}"
+        if st.session_state.selected_work_key else "현재 적용된 차수가 없습니다."
     )
 
-with mode2:
-    st.markdown('<p class="section-title">🔄 복구</p>', unsafe_allow_html=True)
-    if st.button("저장 데이터 복구", use_container_width=True):
-        try:
-            recovered = load_state_from_gsheet()
-            if recovered:
-                st.session_state.selected_order_date = recovered.get("selected_order_date", st.session_state.selected_order_date)
-                st.session_state.selected_wave = recovered.get("selected_wave", st.session_state.selected_wave)
-                st.session_state.selected_status = recovered.get("selected_status", st.session_state.selected_status)
-                st.session_state.selected_work_key = recovered.get("selected_work_key", st.session_state.selected_work_key)
-                st.session_state.store_processed_qty = recovered.get("store_processed_qty", {store: 0 for store in store_total_qty})
-                st.session_state.completed_stores = set(recovered.get("completed_stores", []))
-                st.session_state.processed = set(recovered.get("processed", []))
-                st.session_state.processed_pairs = set(recovered.get("processed_pairs", []))
-                st.session_state.error_count = recovered.get("error_count", 0)
-                st.session_state.last_messages = recovered.get("last_messages", [])
-                st.session_state.last_main_message = tuple(recovered.get("last_main_message", ["info", "대기 중"]))
-                st.session_state.last_scan_plan = recovered.get("last_scan_plan", [])
-                st.session_state.last_scan_product = recovered.get("last_scan_product", "")
-                st.success("저장 데이터 복구 완료")
-                st.rerun()
-            else:
-                st.warning("복구할 저장 데이터가 없습니다.")
-        except Exception as e:
-            st.error(f"복구 실패: {e}")
+    if st.session_state.selected_status == "진행중":
+        if st.button("현재 차수 작업완료 처리"):
+            complete_current_work()
 
-with mode3:
-    st.markdown('<p class="section-title">🔃 오더</p>', unsafe_allow_html=True)
-    if st.button("오더 새로고침", use_container_width=True):
-        clear_orders_cache()
-        st.success("orders 탭 새로고침 완료")
-        st.rerun()
-
-with mode4:
-    st.markdown('<p class="section-title">🧹 초기화</p>', unsafe_allow_html=True)
-    if st.button("작업 데이터 초기화", use_container_width=True):
-        try:
-            reset_state(store_total_qty)
-            st.success("작업 데이터 초기화 완료")
-            st.rerun()
-        except Exception as e:
-            st.error(f"초기화 실패: {e}")
-
-# 현재 차수 완료 버튼
-if st.session_state.selected_status == "진행중":
-    if st.button("현재 차수 작업완료 처리"):
-        try:
-            mark_selected_group_status("작업완료")
-            clear_orders_cache()
-            st.session_state.selected_status = "작업완료"
-            st.session_state.selected_work_key = make_work_key(
-                st.session_state.selected_order_date,
-                st.session_state.selected_wave,
-                "작업완료"
-            )
-            save_state_to_gsheet()
-            st.success("현재 차수를 작업완료로 변경했습니다.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"상태 변경 실패: {e}")
-
-# ===============================
-# 작업자 모드
-# ===============================
-if view_mode == "작업자 모드":
     left_col, right_col = st.columns([1, 2])
 
     with left_col:
         st.markdown('<p class="section-title">📥 스캔 입력</p>', unsafe_allow_html=True)
-
         st.text_input(
             "바코드 입력",
             key="barcode_input",
             on_change=process_barcode,
-            placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다"
+            placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다",
+            disabled=not st.session_state.selected_work_key,
         )
-
         st.markdown('<p class="small-caption">스캐너가 엔터를 보내면 자동 처리됩니다.</p>', unsafe_allow_html=True)
 
         html(
@@ -977,7 +936,6 @@ if view_mode == "작업자 모드":
 
         st.markdown('<p class="section-title">🚨 최근 처리 상태</p>', unsafe_allow_html=True)
         main_level, main_msg = st.session_state.last_main_message
-
         if main_level == "success":
             st.markdown(f'<div class="big-banner banner-success">{main_msg}</div>', unsafe_allow_html=True)
         elif main_level == "error":
@@ -987,30 +945,15 @@ if view_mode == "작업자 모드":
         else:
             st.info(main_msg)
 
-        st.markdown('<p class="section-title">📋 최근 처리 내역</p>', unsafe_allow_html=True)
-
-        if not st.session_state.last_messages:
-            st.info("아직 처리 내역이 없습니다.")
-        else:
-            for level, msg in reversed(st.session_state.last_messages):
-                if level == "success":
-                    st.markdown(f'<div class="big-message msg-success">{msg}</div>', unsafe_allow_html=True)
-                elif level == "warning":
-                    st.markdown(f'<div class="big-message msg-warning">{msg}</div>', unsafe_allow_html=True)
-                elif level == "error":
-                    st.markdown(f'<div class="big-message msg-error">{msg}</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div class="big-message msg-info">{msg}</div>', unsafe_allow_html=True)
-
     with right_col:
         st.markdown('<p class="section-title">📦 방금 스캔한 제품 배분 내역</p>', unsafe_allow_html=True)
-
         if not st.session_state.last_scan_plan:
             st.info("아직 스캔된 제품이 없습니다.")
         else:
-            product_name = st.session_state.last_scan_product
-            st.markdown(f'<div class="big-banner banner-success">📌 {product_name}</div>', unsafe_allow_html=True)
-
+            st.markdown(
+                f'<div class="big-banner banner-success">📌 {st.session_state.last_scan_product}</div>',
+                unsafe_allow_html=True,
+            )
             cols = st.columns(3)
             for idx, plan in enumerate(st.session_state.last_scan_plan):
                 with cols[idx % 3]:
@@ -1022,33 +965,49 @@ if view_mode == "작업자 모드":
                             <div class="plan-sub">{plan["qty"]}개</div>
                         </div>
                         ''',
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True,
                     )
 
+    st.markdown('<p class="section-title">📋 최근 처리 내역</p>', unsafe_allow_html=True)
+    if not st.session_state.last_messages:
+        st.info("아직 처리 내역이 없습니다.")
+    else:
+        for level, msg in reversed(st.session_state.last_messages):
+            cls = {
+                "success": "msg-success",
+                "warning": "msg-warning",
+                "error": "msg-error",
+            }.get(level, "msg-info")
+            st.markdown(f'<div class="big-message {cls}">{msg}</div>', unsafe_allow_html=True)
+
+
 # ===============================
-# 관리자 모드
+# 화면 3: 내역확인
 # ===============================
-elif view_mode == "관리자 모드":
+elif st.session_state.view_mode == "내역확인":
+    st.info(
+        f"현재 조회 차수: {st.session_state.selected_order_date} / Wave {st.session_state.selected_wave} / {st.session_state.selected_status}"
+        if st.session_state.selected_work_key else "현재 적용된 차수가 없습니다."
+    )
+
     left_col, right_col = st.columns([1, 1.2])
 
     with left_col:
         st.markdown('<p class="section-title">📦 매장별 배분 예정 내역</p>', unsafe_allow_html=True)
-
         for store, total_qty in sorted_stores:
             chute = store_map.get(store, "-")
             done = st.session_state.store_processed_qty.get(store, 0)
             remain = max(total_qty - done, 0)
-
             with st.expander(f"{store} (슈트 {chute}) | 총 {total_qty}개 | 잔여 {remain}개", expanded=False):
                 store_items = []
                 for barcode, items in orders.items():
                     for item in items:
                         if item["store"] == store:
                             store_items.append({
-                                "product": item["product"] if item["product"] else barcode,
+                                "product": item["product"] or barcode,
                                 "qty": item["qty"],
                                 "barcode": barcode,
-                                "pair_key": make_processed_pair_key(st.session_state.selected_work_key, barcode, store)
+                                "pair_key": make_processed_pair_key(st.session_state.selected_work_key, barcode, store),
                             })
 
                 for item in store_items:
@@ -1057,71 +1016,51 @@ elif view_mode == "관리자 모드":
                     status_text = "✅ 완료" if is_done else "⏳ 대기"
                     st.markdown(
                         f'<div class="{card_class}">{item["product"]} | {item["qty"]}개 | {status_text}</div>',
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True,
                     )
 
     with right_col:
         st.markdown('<p class="section-title">✅ 완료된 매장 목록 (100%)</p>', unsafe_allow_html=True)
-
         if not st.session_state.completed_stores:
             st.write("아직 완료된 매장 없음")
         else:
             for store in sorted(st.session_state.completed_stores):
                 chute = store_map.get(store, "-")
-                st.markdown(
-                    f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>', unsafe_allow_html=True)
+
 
 # ===============================
-# 진척율
+# 화면 4: 진척율
 # ===============================
 else:
-    st.markdown('<p class="section-title">📊 전체 진척율</p>', unsafe_allow_html=True)
+    st.info(
+        f"현재 조회 차수: {st.session_state.selected_order_date} / Wave {st.session_state.selected_wave} / {st.session_state.selected_status}"
+        if st.session_state.selected_work_key else "현재 적용된 차수가 없습니다."
+    )
 
     total_qty_all = sum(store_total_qty.values())
     done_qty_all = sum(st.session_state.store_processed_qty.get(store, 0) for store in store_total_qty.keys())
 
+    st.markdown('<p class="section-title">📊 전체 진척율</p>', unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        fig = make_total_donut(done_qty_all, total_qty_all)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(make_total_donut(done_qty_all, total_qty_all), use_container_width=True)
 
     with col2:
-        st.markdown(
-            f'''
-            <div class="summary-card">
-                <div class="summary-label">정상 처리 바코드</div>
-                <div class="summary-value">{len(st.session_state.processed)}</div>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            f'''
-            <div class="summary-card">
-                <div class="summary-label">에러</div>
-                <div class="summary-value">{st.session_state.error_count}</div>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            f'''
-            <div class="summary-card">
-                <div class="summary-label">전체 투입수량</div>
-                <div class="summary-value">{done_qty_all}</div>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            f'''
-            <div class="summary-card">
-                <div class="summary-label">전체 총수량</div>
-                <div class="summary-value">{total_qty_all}</div>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
+        metrics = [
+            ("정상 처리 바코드", len(st.session_state.processed)),
+            ("에러", st.session_state.error_count),
+            ("전체 투입수량", done_qty_all),
+            ("전체 총수량", total_qty_all),
+        ]
+        for label, value in metrics:
+            st.markdown(
+                f'''
+                <div class="summary-card">
+                    <div class="summary-label">{label}</div>
+                    <div class="summary-value">{value}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
