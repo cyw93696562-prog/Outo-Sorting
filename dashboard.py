@@ -46,7 +46,7 @@ html, body, [class*="css"] {{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 28px;
+    padding: 16px 28px;
     border-bottom: 2px solid #e6ebf2;
     z-index: 99999;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -71,7 +71,7 @@ html, body, [class*="css"] {{
 }}
 
 .header-title-only {{
-    font-size: 40px;
+    font-size: 42px;
     font-weight: 900;
     color: #1d2f5f;
     line-height: 1;
@@ -80,11 +80,11 @@ html, body, [class*="css"] {{
 }}
 
 .section-title {{
-    font-size: 34px;
+    font-size: 30px;
     font-weight: 800;
     color: #1d2f5f;
-    margin-top: 18px;
-    margin-bottom: 8px;
+    margin-top: 10px;
+    margin-bottom: 10px;
 }}
 
 .stTextInput label {{
@@ -104,11 +104,11 @@ html, body, [class*="css"] {{
 }}
 
 .big-banner {{
-    font-size: 42px;
+    font-size: 36px;
     font-weight: 900;
-    padding: 24px 28px;
+    padding: 22px 26px;
     border-radius: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.10);
 }}
 
@@ -128,7 +128,7 @@ html, body, [class*="css"] {{
 }}
 
 .big-message {{
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 800;
     padding: 14px 18px;
     border-radius: 12px;
@@ -156,13 +156,24 @@ html, body, [class*="css"] {{
 }}
 
 .store-done {{
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 800;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     padding: 12px 16px;
     border-radius: 12px;
     background-color: #eef7ee;
     color: #1b5e20;
+}}
+
+.plan-card {{
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background-color: #f5f7fb;
+    color: #1f3b5c;
+    border: 1px solid #e6ebf2;
 }}
 
 .summary-card {{
@@ -362,13 +373,13 @@ def make_total_donut(done, total):
     ])
 
     fig.update_layout(
-        title={"text": "전체 진척율", "x": 0.5, "xanchor": "center", "font": {"size": 30}},
+        title={"text": "전체 진척율", "x": 0.5, "xanchor": "center", "font": {"size": 28}},
         showlegend=True,
-        height=520,
-        margin=dict(t=80, b=20, l=20, r=20),
+        height=460,
+        margin=dict(t=70, b=20, l=20, r=20),
         annotations=[
             dict(
-                text=f"<b style='font-size:40px'>{percent}%</b><br><span style='font-size:24px'>{done}/{total}</span>",
+                text=f"<b style='font-size:36px'>{percent}%</b><br><span style='font-size:22px'>{done}/{total}</span>",
                 x=0.5,
                 y=0.5,
                 showarrow=False
@@ -378,139 +389,159 @@ def make_total_donut(done, total):
     return fig
 
 # ===============================
-# 입력창
+# 모드 선택
 # ===============================
-st.markdown('<p class="section-title">📥 스캔 입력</p>', unsafe_allow_html=True)
-
-st.text_input(
-    "바코드 입력",
-    key="barcode_input",
-    on_change=process_barcode,
-    placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다"
-)
-
-html(
-    """
-    <script>
-    const focusInput = () => {
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        if (inputs.length > 0) {
-            inputs[0].focus();
-            inputs[0].select();
-        }
-    };
-    setTimeout(focusInput, 150);
-    setTimeout(focusInput, 500);
-    setTimeout(focusInput, 1000);
-    setTimeout(focusInput, 1800);
-    </script>
-    """,
-    height=0,
+st.markdown('<p class="section-title">🔐 화면 모드</p>', unsafe_allow_html=True)
+view_mode = st.radio(
+    "화면 모드 선택",
+    ["작업자 모드", "관리자 모드"],
+    horizontal=True,
+    label_visibility="collapsed"
 )
 
 # ===============================
-# 완료 효과음
+# 좌우 레이아웃
 # ===============================
-if st.session_state.play_success_sound:
-    play_beep()
-    st.session_state.play_success_sound = False
+left_col, right_col = st.columns([1.2, 1])
 
-# ===============================
-# 최근 처리 상태
-# ===============================
-st.markdown('<p class="section-title">🚨 최근 처리 상태</p>', unsafe_allow_html=True)
-main_level, main_msg = st.session_state.last_main_message
+with left_col:
+    st.markdown('<p class="section-title">📥 스캔 입력</p>', unsafe_allow_html=True)
 
-if main_level == "success":
-    st.markdown(f'<div class="big-banner banner-success">{main_msg}</div>', unsafe_allow_html=True)
-elif main_level == "error":
-    st.markdown(f'<div class="big-banner banner-error">{main_msg}</div>', unsafe_allow_html=True)
-elif main_level == "warning":
-    st.markdown(f'<div class="big-banner banner-warning">{main_msg}</div>', unsafe_allow_html=True)
-else:
-    st.info(main_msg)
+    st.text_input(
+        "바코드 입력",
+        key="barcode_input",
+        on_change=process_barcode,
+        placeholder="스캐너로 바코드를 찍으면 자동 처리됩니다"
+    )
 
-# ===============================
-# 최근 처리 내역
-# ===============================
-st.markdown('<p class="section-title">📋 최근 처리 내역</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="small-caption">스캐너가 엔터를 보내면 자동 처리됩니다.</p>',
+        unsafe_allow_html=True
+    )
 
-if not st.session_state.last_messages:
-    st.info("아직 처리 내역이 없습니다.")
-else:
-    for level, msg in reversed(st.session_state.last_messages):
-        if level == "success":
-            st.markdown(f'<div class="big-message msg-success">{msg}</div>', unsafe_allow_html=True)
-        elif level == "warning":
-            st.markdown(f'<div class="big-message msg-warning">{msg}</div>', unsafe_allow_html=True)
-        elif level == "error":
-            st.markdown(f'<div class="big-message msg-error">{msg}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="big-message msg-info">{msg}</div>', unsafe_allow_html=True)
+    html(
+        """
+        <script>
+        const focusInput = () => {
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {
+                inputs[0].focus();
+                inputs[0].select();
+            }
+        };
+        setTimeout(focusInput, 150);
+        setTimeout(focusInput, 500);
+        setTimeout(focusInput, 1000);
+        setTimeout(focusInput, 1800);
+        </script>
+        """,
+        height=0,
+    )
 
-# ===============================
-# 완료된 매장 목록
-# ===============================
-st.markdown('<p class="section-title">✅ 완료된 매장 목록 (100%)</p>', unsafe_allow_html=True)
+    if st.session_state.play_success_sound:
+        play_beep()
+        st.session_state.play_success_sound = False
 
-if not st.session_state.completed_stores:
-    st.write("아직 완료된 매장 없음")
-else:
-    for store in sorted(st.session_state.completed_stores):
+    st.markdown('<p class="section-title">🚨 최근 처리 상태</p>', unsafe_allow_html=True)
+    main_level, main_msg = st.session_state.last_main_message
+
+    if main_level == "success":
+        st.markdown(f'<div class="big-banner banner-success">{main_msg}</div>', unsafe_allow_html=True)
+    elif main_level == "error":
+        st.markdown(f'<div class="big-banner banner-error">{main_msg}</div>', unsafe_allow_html=True)
+    elif main_level == "warning":
+        st.markdown(f'<div class="big-banner banner-warning">{main_msg}</div>', unsafe_allow_html=True)
+    else:
+        st.info(main_msg)
+
+    st.markdown('<p class="section-title">📋 최근 처리 내역</p>', unsafe_allow_html=True)
+
+    if not st.session_state.last_messages:
+        st.info("아직 처리 내역이 없습니다.")
+    else:
+        for level, msg in reversed(st.session_state.last_messages):
+            if level == "success":
+                st.markdown(f'<div class="big-message msg-success">{msg}</div>', unsafe_allow_html=True)
+            elif level == "warning":
+                st.markdown(f'<div class="big-message msg-warning">{msg}</div>', unsafe_allow_html=True)
+            elif level == "error":
+                st.markdown(f'<div class="big-message msg-error">{msg}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="big-message msg-info">{msg}</div>', unsafe_allow_html=True)
+
+with right_col:
+    st.markdown('<p class="section-title">📦 매장별 배분 예정 내역</p>', unsafe_allow_html=True)
+
+    for store, total_qty in sorted_stores:
         chute = store_map.get(store, "-")
+        done = st.session_state.store_processed_qty.get(store, 0)
+        remain = max(total_qty - done, 0)
         st.markdown(
-            f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>',
+            f'<div class="plan-card">{store} (슈트 {chute}) | 총 {total_qty}개 | 잔여 {remain}개</div>',
             unsafe_allow_html=True
         )
 
+    st.markdown('<p class="section-title">✅ 완료된 매장 목록 (100%)</p>', unsafe_allow_html=True)
+
+    if not st.session_state.completed_stores:
+        st.write("아직 완료된 매장 없음")
+    else:
+        for store in sorted(st.session_state.completed_stores):
+            chute = store_map.get(store, "-")
+            st.markdown(
+                f'<div class="store-done">{store} (슈트 {chute}) ✅ 완료</div>',
+                unsafe_allow_html=True
+            )
+
 # ===============================
-# 전체 상태
+# 관리자 모드 전용
 # ===============================
-st.markdown('<p class="section-title">📊 전체 상태</p>', unsafe_allow_html=True)
+if view_mode == "관리자 모드":
+    st.markdown('<p class="section-title">📊 관리자 진척율</p>', unsafe_allow_html=True)
 
-total_qty_all = sum(store_total_qty.values())
-done_qty_all = sum(st.session_state.store_processed_qty.values())
+    total_qty_all = sum(store_total_qty.values())
+    done_qty_all = sum(st.session_state.store_processed_qty.values())
 
-col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([2, 1])
 
-with col1:
-    fig = make_total_donut(done_qty_all, total_qty_all)
-    st.plotly_chart(fig, use_container_width=True)
+    with col1:
+        fig = make_total_donut(done_qty_all, total_qty_all)
+        st.plotly_chart(fig, use_container_width=True)
 
-with col2:
-    st.markdown(
-        f'''
-        <div class="summary-card">
-            <div class="summary-label">정상 처리 바코드</div>
-            <div class="summary-value">{len(st.session_state.processed)}</div>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f'''
-        <div class="summary-card">
-            <div class="summary-label">에러</div>
-            <div class="summary-value">{st.session_state.error_count}</div>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f'''
-        <div class="summary-card">
-            <div class="summary-label">전체 투입수량</div>
-            <div class="summary-value">{done_qty_all}</div>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f'''
-        <div class="summary-card">
-            <div class="summary-label">전체 총수량</div>
-            <div class="summary-value">{total_qty_all}</div>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
+    with col2:
+        st.markdown(
+            f'''
+            <div class="summary-card">
+                <div class="summary-label">정상 처리 바코드</div>
+                <div class="summary-value">{len(st.session_state.processed)}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f'''
+            <div class="summary-card">
+                <div class="summary-label">에러</div>
+                <div class="summary-value">{st.session_state.error_count}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f'''
+            <div class="summary-card">
+                <div class="summary-label">전체 투입수량</div>
+                <div class="summary-value">{done_qty_all}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f'''
+            <div class="summary-card">
+                <div class="summary-label">전체 총수량</div>
+                <div class="summary-value">{total_qty_all}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
